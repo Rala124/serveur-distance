@@ -177,16 +177,28 @@ document.addEventListener('click', function(e) {
 
 // Refresh des sélectionnés : relance une commande system_info pour chaque
 function refreshSelected() {
-    if (selectedClients.size === 0) {
-        showNotification('info', 'Aucun PC sélectionné');
-        return;
-    }
     const btn = document.getElementById('refresh-btn');
     const icon = btn.querySelector('i');
     icon.classList.add('refresh-spinning');
+
+    // Si aucun PC sélectionné, on prend tous les PC affichés
+    let targets = [];
+    if (selectedClients.size === 0) {
+        const allRows = document.querySelectorAll('.recent-client-row[data-machine-id]');
+        targets = Array.from(allRows).map(r => r.dataset.machineId);
+    } else {
+        targets = Array.from(selectedClients);
+    }
+
+    if (targets.length === 0) {
+        icon.classList.remove('refresh-spinning');
+        showNotification('info', 'Aucun PC trouvé');
+        return;
+    }
+
     let completed = 0;
-    const total = selectedClients.size;
-    selectedClients.forEach(id => {
+    const total = targets.length;
+    targets.forEach(id => {
         sendCommandAndUpdate(id, 'system_info').finally(() => {
             completed++;
             if (completed >= total) {
@@ -1245,5 +1257,8 @@ loadRecentClients();
 updateConnectionStatus();
 setInterval(() => {
     loadStats();
-    if (document.getElementById('clients-page').classList.contains('active')) loadClients();
+    loadRecentClients();
+    if (document.getElementById('clients-page').classList.contains('active')) {
+        loadClients();
+    }
 }, 10000);
