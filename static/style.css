@@ -379,3 +379,46 @@ body {
     .stats-grid { grid-template-columns: 1fr 1fr; }
     .clients-grid { grid-template-columns: 1fr; }
 }
+
+
+.dashboard-actions {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+}
+.btn-danger-outline {
+    background: transparent;
+    border: 1px solid var(--red);
+    color: var(--red);
+}
+.btn-danger-outline:hover {
+    background: var(--red-subtle);
+}
+.recent-client-row {
+    cursor: pointer;
+    user-select: none;
+}
+.recent-client-row.selected {
+    background: var(--accent-subtle);
+    border-color: var(--accent);
+}
+.recent-client-row.selected::before {
+    content: '\f00c';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    color: var(--accent);
+    margin-right: 8px;
+}
+.status-green {
+    color: var(--green);
+    font-weight: 600;
+}
+.status-orange {
+    color: var(--amber);
+    font-weight: 600;
+}

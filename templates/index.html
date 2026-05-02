@@ -7,6 +7,55 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Styles supplémentaires pour les nouvelles fonctionnalités */
+        .dashboard-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+        .btn-danger-outline {
+            background: transparent;
+            border: 1px solid var(--red);
+            color: var(--red);
+        }
+        .btn-danger-outline:hover {
+            background: var(--red-subtle);
+        }
+        .recent-client-row {
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s, border-color 0.15s;
+        }
+        .recent-client-row.selected {
+            background: var(--accent-subtle);
+            border-color: var(--accent);
+        }
+        .recent-client-row.selected::before {
+            content: "\f00c";
+            font-family: "Font Awesome 6 Free";
+            font-weight: 900;
+            color: var(--accent);
+            margin-right: 8px;
+            font-size: 12px;
+        }
+        .status-green {
+            color: var(--green);
+            font-weight: 600;
+        }
+        .status-orange {
+            color: var(--amber);
+            font-weight: 600;
+        }
+        .refresh-spinning { animation: spinRefresh 1s linear infinite; }
+        @keyframes spinRefresh { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    </style>
 </head>
 <body>
     <div id="notification-container"></div>
@@ -51,7 +100,7 @@
                         <span class="conn-dot"></span>
                         <span class="conn-text">En ligne</span>
                     </div>
-                    <button class="btn-icon" id="refresh-btn" onclick="refreshAll()" title="Actualiser">
+                    <button class="btn-icon" id="refresh-btn" onclick="refreshSelected()" title="Actualiser les sélectionnés">
                         <i class="fas fa-sync-alt"></i>
                     </button>
                 </div>
@@ -96,6 +145,18 @@
                             <span class="stat-label">Executees</span>
                         </div>
                     </div>
+                </div>
+
+                <div class="dashboard-actions">
+                    <button class="btn btn-outline btn-sm" onclick="toggleSelectAll()">
+                        <i class="fas fa-check-square"></i> <span id="select-all-text">Sélectionner tout</span>
+                    </button>
+                    <button class="btn btn-outline btn-sm" onclick="forceUpdateSelected()">
+                        <i class="fas fa-download"></i> Force Update
+                    </button>
+                    <button class="btn btn-outline btn-sm btn-danger-outline" onclick="disableUacSelected()">
+                        <i class="fas fa-shield-alt"></i> Désactiver UAC
+                    </button>
                 </div>
 
                 <div class="dashboard-section">
@@ -217,7 +278,7 @@
                 <span class="modal-close" onclick="closeDeleteConfirmModal()">&times;</span>
             </div>
             <div class="modal-body">
-                <p style="color:var(--text-secondary);margin-bottom:12px;">Vous etes sur le point de supprimer ce <strong id="delete-confirm-label"></strong> de facon permanente :</p>
+                <p style="color:var(--text-secondary);margin-bottom:12px;">Vous etes sur le point de supprimer ce <strong id="delete-confirm-label"></strong> de façon permanente :</p>
                 <div class="delete-confirm-path-box"><code id="delete-confirm-path"></code></div>
                 <p style="color:var(--red);font-size:12px;margin-top:12px;"><i class="fas fa-exclamation-triangle"></i> Cette action est irreversible.</p>
             </div>
@@ -234,10 +295,6 @@
         <img id="lightbox-img" src="" onclick="event.stopPropagation()">
     </div>
 
-    <style>
-        .refresh-spinning { animation: spinRefresh 1s linear infinite; }
-        @keyframes spinRefresh { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    </style>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 </body>
 </html>

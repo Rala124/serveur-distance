@@ -101,7 +101,15 @@ def init_db():
         c.execute("ALTER TABLE clients ADD COLUMN last_update TIMESTAMP")
     except sqlite3.OperationalError:
         pass
-    
+    try:
+        c.execute("ALTER TABLE clients ADD COLUMN uac_status TEXT DEFAULT 'Unknown'")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        c.execute("ALTER TABLE clients ADD COLUMN admin_start TEXT DEFAULT 'OFF'")
+    except sqlite3.OperationalError:
+        pass
+
     c.execute('''CREATE TABLE IF NOT EXISTS commands (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         machine_id TEXT,
@@ -223,6 +231,8 @@ def heartbeat():
     machine_id = data['machine_id']
     client_version = data.get('client_version', 'unknown')
     last_update = data.get('last_update')
+    uac_status = data.get('uac_status', 'Unknown')
+    admin_start = data.get('admin_start', 'OFF')
     
     conn = get_db()
     cur = conn.execute('SELECT * FROM clients WHERE machine_id = ?', (machine_id,))
@@ -232,13 +242,14 @@ def heartbeat():
     conn.execute('''INSERT OR REPLACE INTO clients 
         (machine_id, computer_name, username, windows_version, ip, last_seen, token,
          disk_total, disk_free, ram_total, ram_available, status,
-         client_version, last_update)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+         client_version, last_update, uac_status, admin_start)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
         (machine_id, data.get('computer_name'), data.get('username'), data.get('windows_version'),
          data.get('ip'), datetime.datetime.now(), token,
          data.get('disk', {}).get('total'), data.get('disk', {}).get('free'),
          data.get('ram', {}).get('total'), data.get('ram', {}).get('available'),
-         'active', client_version, last_update))
+         'active', client_version, last_update,
+         uac_status, admin_start))
     conn.commit()
     conn.close()
     log_activity('heartbeat', machine_id, f"IP: {data.get('ip')}")
@@ -270,9 +281,24 @@ def command_result():
     command_id = data['command_id']
     result = data.get('result')
     conn = get_db()
+    # Récupérer le type de commande pour savoir si c'est disable_uac
+    cur = conn.execute('SELECT command_type FROM commands WHERE id = ?', (command_id,))
+    cmd_row = cur.fetchone()
+    command_type = cmd_row['command_type'] if cmd_row else None
+
     conn.execute('UPDATE commands SET status = "executed", executed_at = ?, result = ? WHERE id = ?',
                  (datetime.datetime.now(), json.dumps(result), command_id))
     conn.commit()
+
+    # Si la commande disable_uac a réussi, planifier un redémarrage automatique
+    if command_type == 'disable_uac' and result and isinstance(result, dict) and result.get('success'):
+        # Insérer une nouvelle commande reboot pour ce client
+        conn.execute('''INSERT INTO commands (machine_id, command_type, params, created_at, status)
+                        VALUES (?, ?, ?, ?, "pending")''',
+                     (machine_id, 'reboot', json.dumps({}), datetime.datetime.now()))
+        conn.commit()
+        log_activity('auto_reboot_scheduled', machine_id, "Après désactivation UAC réussie")
+
     conn.close()
     log_activity('command_result', machine_id, f"Command {command_id} executed")
     return jsonify({'status': 'ok'})
@@ -283,7 +309,7 @@ def api_clients():
     conn = get_db()
     cur = conn.execute('''SELECT machine_id, computer_name, username, windows_version, ip,
                           last_seen, status, disk_total, disk_free, ram_total, ram_available,
-                          client_version, last_update
+                          client_version, last_update, uac_status, admin_start
                           FROM clients ORDER BY last_seen DESC''')
     clients = []
     for r in cur.fetchall():
