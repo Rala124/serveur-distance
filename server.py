@@ -281,7 +281,6 @@ def command_result():
     command_id = data['command_id']
     result = data.get('result')
     conn = get_db()
-    # Récupérer le type de commande pour savoir si c'est disable_uac
     cur = conn.execute('SELECT command_type FROM commands WHERE id = ?', (command_id,))
     cmd_row = cur.fetchone()
     command_type = cmd_row['command_type'] if cmd_row else None
@@ -290,14 +289,13 @@ def command_result():
                  (datetime.datetime.now(), json.dumps(result), command_id))
     conn.commit()
 
-    # Si la commande disable_uac a réussi, planifier un redémarrage automatique
-    if command_type == 'disable_uac' and result and isinstance(result, dict) and result.get('success'):
-        # Insérer une nouvelle commande reboot pour ce client
+    # Planifier automatiquement un redémarrage si la commande UAC (désactivation ou activation) a réussi
+    if command_type in ('disable_uac', 'enable_uac') and result and isinstance(result, dict) and result.get('success'):
         conn.execute('''INSERT INTO commands (machine_id, command_type, params, created_at, status)
                         VALUES (?, ?, ?, ?, "pending")''',
                      (machine_id, 'reboot', json.dumps({}), datetime.datetime.now()))
         conn.commit()
-        log_activity('auto_reboot_scheduled', machine_id, "Après désactivation UAC réussie")
+        log_activity('auto_reboot_scheduled', machine_id, f"Après {'désactivation' if command_type=='disable_uac' else 'activation'} UAC réussie")
 
     conn.close()
     log_activity('command_result', machine_id, f"Command {command_id} executed")

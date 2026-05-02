@@ -422,3 +422,23 @@ body {
     color: var(--amber);
     font-weight: 600;
 }
+.admin-badge {
+    background: var(--amber);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 10px;
+    margin-left: 6px;
+    display: inline-flex;
+    align-items: center;
+}
+
+.btn-success-outline {
+    background: transparent;
+    border: 1px solid var(--green);
+    color: var(--green);
+}
+.btn-success-outline:hover {
+    background: var(--green-subtle);
+}

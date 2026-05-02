@@ -234,6 +234,18 @@ function disableUacSelected() {
     showNotification('info', `Commande disable_uac envoyée à ${selectedClients.size} PC(s)`);
 }
 
+function enableUacSelected() {
+    if (selectedClients.size === 0) {
+        showNotification('info', 'Aucun PC sélectionné');
+        return;
+    }
+    if (!confirm(`Voulez-vous vraiment tenter d'activer l'UAC sur ${selectedClients.size} PC(s) ?`)) return;
+    selectedClients.forEach(id => {
+        sendCommandAndUpdate(id, 'enable_uac');
+    });
+    showNotification('info', `Commande enable_uac envoyée à ${selectedClients.size} PC(s)`);
+}
+
 async function sendCommandAndUpdate(machineId, cmdType, params = {}) {
     try {
         const res = await fetch('/api/send_command', {
@@ -285,6 +297,7 @@ function renderRecentClients(clients) {
         <div class="recent-client-row ${checked}" data-machine-id="${client.machine_id}">
             <div class="recent-client-left">
                 <span class="recent-client-dot ${client.online ? 'online' : 'offline'}"></span>
+                ${client.admin_start === 'ON' ? '<span class="admin-badge">Admin</span>' : ''}
                 <span class="recent-client-name">${escapeHtml(client.computer_name || client.machine_id)}</span>
                 <span class="recent-client-meta">${escapeHtml(client.username || '')}</span>
             </div>
@@ -333,6 +346,7 @@ function renderClients(clients) {
             <div class="client-header">
                 <div class="client-name">${escapeHtml(client.computer_name || client.machine_id)}</div>
                 <div class="client-status ${client.online ? 'online' : 'offline'}">${client.online ? 'Online' : 'Offline'}</div>
+                ${client.admin_start === 'ON' ? '<span class="admin-badge">Admin</span>' : ''}
             </div>
             <div class="client-details">
                 <div class="client-detail-row"><i class="fas fa-user"></i> ${escapeHtml(client.username || '?')}</div>
