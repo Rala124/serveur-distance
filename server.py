@@ -473,9 +473,7 @@ def set_security_headers(response):
 @api_auth_required
 def detect_devices():
     """Détecte les écrans, webcams et sources audio"""
-    import subprocess
     import platform
-    import sys
     
     result = {'monitors': [], 'webcams': [], 'audio_inputs': [], 'audio_outputs': []}
     
